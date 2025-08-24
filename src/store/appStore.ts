@@ -1,56 +1,82 @@
 import { create } from 'zustand'
-import type { 
-  Secret, 
-  CredentialFolder, 
-  ApiKey, 
-  EnvironmentVariable, 
-  DashboardStats,
-  SearchFilters 
-} from '../types'
+import type { Database } from '../types/database'
+import type { DashboardStats } from '../types'
+
+type Secret = Database['public']['Tables']['secrets']['Row']
+type ApiKey = Database['public']['Tables']['api_keys']['Row']
+type EnvironmentVariable = Database['public']['Tables']['environment_variables']['Row']
+type Folder = Database['public']['Tables']['credential_folders']['Row']
+
+// Event system for real-time updates
+type DashboardUpdateEvent = {
+  type: 'data_changed'
+  entity: 'secrets' | 'apiKeys' | 'envVars' | 'folders'
+  action: 'add' | 'update' | 'delete'
+  data?: any
+}
+
+type EventListener = (event: DashboardUpdateEvent) => void
+
+class DashboardEventEmitter {
+  private listeners: EventListener[] = []
+
+  subscribe(listener: EventListener) {
+    this.listeners.push(listener)
+    return () => {
+      this.listeners = this.listeners.filter(l => l !== listener)
+    }
+  }
+
+  emit(event: DashboardUpdateEvent) {
+    this.listeners.forEach(listener => listener(event))
+  }
+}
+
+export const dashboardEvents = new DashboardEventEmitter()
 
 interface AppState {
   // Data state
   secrets: Secret[]
-  folders: CredentialFolder[]
+  folders: Folder[]
   apiKeys: ApiKey[]
   envVars: EnvironmentVariable[]
   dashboardStats: DashboardStats | null
   
   // UI state
   isLoading: boolean
-  searchFilters: SearchFilters
+  searchFilters: { query: string; tags: string[] }
   selectedFolder: string | null
   
-  // Actions - Secrets
+  // Actions for secrets
   setSecrets: (secrets: Secret[]) => void
   addSecret: (secret: Secret) => void
   updateSecret: (id: string, secret: Partial<Secret>) => void
   removeSecret: (id: string) => void
   
-  // Actions - Folders
-  setFolders: (folders: CredentialFolder[]) => void
-  addFolder: (folder: CredentialFolder) => void
-  updateFolder: (id: string, folder: Partial<CredentialFolder>) => void
+  // Actions for folders
+  setFolders: (folders: Folder[]) => void
+  addFolder: (folder: Folder) => void
+  updateFolder: (id: string, folder: Partial<Folder>) => void
   removeFolder: (id: string) => void
   
-  // Actions - API Keys
+  // Actions for API keys
   setApiKeys: (apiKeys: ApiKey[]) => void
   addApiKey: (apiKey: ApiKey) => void
   updateApiKey: (id: string, apiKey: Partial<ApiKey>) => void
   removeApiKey: (id: string) => void
   
-  // Actions - Environment Variables
+  // Actions for environment variables
   setEnvVars: (envVars: EnvironmentVariable[]) => void
   addEnvVar: (envVar: EnvironmentVariable) => void
   updateEnvVar: (id: string, envVar: Partial<EnvironmentVariable>) => void
   removeEnvVar: (id: string) => void
   
-  // Actions - Dashboard
+  // Actions for dashboard
   setDashboardStats: (stats: DashboardStats) => void
   
-  // Actions - UI
+  // Actions for UI
   setLoading: (loading: boolean) => void
-  setSearchFilters: (filters: SearchFilters) => void
+  setSearchFilters: (filters: { query: string; tags: string[] }) => void
   setSelectedFolder: (folderId: string | null) => void
   
   // Utility actions
@@ -74,73 +100,65 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
   selectedFolder: null,
 
-  // Secret actions
+  // Actions for secrets
   setSecrets: (secrets) => set({ secrets }),
-  
-  addSecret: (secret) => set((state) => ({
-    secrets: [...state.secrets, secret]
-  })),
-  
-  updateSecret: (id, updatedSecret) => set((state) => ({
-    secrets: state.secrets.map(secret => 
-      secret.id === id ? { ...secret, ...updatedSecret } : secret
-    )
-  })),
-  
-  removeSecret: (id) => set((state) => ({
-    secrets: state.secrets.filter(secret => secret.id !== id)
-  })),
+  addSecret: (secret) => set((state) => {
+    dashboardEvents.emit({ type: 'data_changed', entity: 'secrets', action: 'add', data: secret })
+    return { secrets: [secret, ...state.secrets] }
+  }),
+  updateSecret: (id, secret) => set((state) => {
+    dashboardEvents.emit({ type: 'data_changed', entity: 'secrets', action: 'update', data: { id, ...secret } })
+    return { secrets: state.secrets.map(s => s.id === id ? { ...s, ...secret } : s) }
+  }),
+  removeSecret: (id) => set((state) => {
+    dashboardEvents.emit({ type: 'data_changed', entity: 'secrets', action: 'delete', data: { id } })
+    return { secrets: state.secrets.filter(secret => secret.id !== id) }
+  }),
 
-  // Folder actions
+  // Actions for folders
   setFolders: (folders) => set({ folders }),
-  
-  addFolder: (folder) => set((state) => ({
-    folders: [...state.folders, folder]
-  })),
-  
-  updateFolder: (id, updatedFolder) => set((state) => ({
-    folders: state.folders.map(folder => 
-      folder.id === id ? { ...folder, ...updatedFolder } : folder
-    )
-  })),
-  
-  removeFolder: (id) => set((state) => ({
-    folders: state.folders.filter(folder => folder.id !== id)
-  })),
+  addFolder: (folder) => set((state) => {
+    dashboardEvents.emit({ type: 'data_changed', entity: 'folders', action: 'add', data: folder })
+    return { folders: [folder, ...state.folders] }
+  }),
+  updateFolder: (id, folder) => set((state) => {
+    dashboardEvents.emit({ type: 'data_changed', entity: 'folders', action: 'update', data: { id, ...folder } })
+    return { folders: state.folders.map(f => f.id === id ? { ...f, ...folder } : f) }
+  }),
+  removeFolder: (id) => set((state) => {
+    dashboardEvents.emit({ type: 'data_changed', entity: 'folders', action: 'delete', data: { id } })
+    return { folders: state.folders.filter(folder => folder.id !== id) }
+  }),
 
-  // API Key actions
+  // Actions for API keys
   setApiKeys: (apiKeys) => set({ apiKeys }),
-  
-  addApiKey: (apiKey) => set((state) => ({
-    apiKeys: [...state.apiKeys, apiKey]
-  })),
-  
-  updateApiKey: (id, updatedApiKey) => set((state) => ({
-    apiKeys: state.apiKeys.map(apiKey => 
-      apiKey.id === id ? { ...apiKey, ...updatedApiKey } : apiKey
-    )
-  })),
-  
-  removeApiKey: (id) => set((state) => ({
-    apiKeys: state.apiKeys.filter(apiKey => apiKey.id !== id)
-  })),
+  addApiKey: (apiKey) => set((state) => {
+    dashboardEvents.emit({ type: 'data_changed', entity: 'apiKeys', action: 'add', data: apiKey })
+    return { apiKeys: [apiKey, ...state.apiKeys] }
+  }),
+  updateApiKey: (id, apiKey) => set((state) => {
+    dashboardEvents.emit({ type: 'data_changed', entity: 'apiKeys', action: 'update', data: { id, ...apiKey } })
+    return { apiKeys: state.apiKeys.map(key => key.id === id ? { ...key, ...apiKey } : key) }
+  }),
+  removeApiKey: (id) => set((state) => {
+    dashboardEvents.emit({ type: 'data_changed', entity: 'apiKeys', action: 'delete', data: { id } })
+    return { apiKeys: state.apiKeys.filter(apiKey => apiKey.id !== id) }
+  }),
 
-  // Environment Variable actions
+  // Actions for environment variables
   setEnvVars: (envVars) => set({ envVars }),
-  
-  addEnvVar: (envVar) => set((state) => ({
-    envVars: [...state.envVars, envVar]
-  })),
-  
-  updateEnvVar: (id, updatedEnvVar) => set((state) => ({
-    envVars: state.envVars.map(envVar => 
-      envVar.id === id ? { ...envVar, ...updatedEnvVar } : envVar
-    )
-  })),
-  
-  removeEnvVar: (id) => set((state) => ({
-    envVars: state.envVars.filter(envVar => envVar.id !== id)
-  })),
+  addEnvVar: (envVar) => set((state) => {
+    dashboardEvents.emit({ type: 'data_changed', entity: 'envVars', action: 'add', data: envVar })
+    return { envVars: [envVar, ...state.envVars] }
+  }),
+  updateEnvVar: (id, envVar) => set((state) => {
+    dashboardEvents.emit({ type: 'data_changed', entity: 'envVars', action: 'update', data: { id, ...envVar } })
+    return { envVars: state.envVars.map(env => env.id === id ? { ...env, ...envVar } : env) }
+  }),
+  removeEnvVar: (id) => set((state) => {
+    dashboardEvents.emit({ type: 'data_changed', entity: 'envVars', action: 'delete', data: { id } })
+    return { envVars: state.envVars.filter(envVar => envVar.id !== id) }
+  }),
 
   // Dashboard actions
   setDashboardStats: (stats) => set({ dashboardStats: stats }),

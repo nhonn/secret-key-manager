@@ -307,3 +307,10 @@ export interface Database {
     }
   }
 }
+
+// Export individual types for easier use
+export type Secret = Database['public']['Tables']['secrets']['Row']
+export type ApiKey = Database['public']['Tables']['api_keys']['Row']
+export type EnvironmentVariable = Database['public']['Tables']['environment_variables']['Row']
+export type CredentialFolder = Database['public']['Tables']['credential_folders']['Row']
+export type AccessLog = Database['public']['Tables']['access_logs']['Row']

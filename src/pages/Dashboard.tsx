@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, useCallback, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import {
   KeyIcon,
@@ -9,8 +9,14 @@ import {
   EyeIcon,
   ClockIcon
 } from '@heroicons/react/24/outline'
+import { RefreshCw, AlertCircle } from 'lucide-react'
 import { useAuthStore } from '../store/authStore'
 import { useAppStore } from '../store/appStore'
+import { dashboardEvents } from '../store/appStore'
+import { ApiKeysService } from '../services/apiKeys'
+import { EnvironmentVariablesService } from '../services/environmentVariables'
+import { SecretsService } from '../services/secrets'
+import { toast } from 'sonner'
 import type { DashboardStats } from '../types'
 
 const Dashboard: React.FC = () => {
@@ -21,37 +27,131 @@ const Dashboard: React.FC = () => {
     secrets, 
     apiKeys, 
     envVars, 
-    folders 
+    folders,
+    setSecrets,
+    setApiKeys,
+    setEnvVars
   } = useAppStore()
   
   const [isLoading, setIsLoading] = useState(true)
+  const [isRefreshing, setIsRefreshing] = useState(false)
+  const [lastRefresh, setLastRefresh] = useState<Date>(new Date())
+  const [error, setError] = useState<string | null>(null)
+  
+  // Performance optimization: debouncing and caching
+  const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const lastFetchTimeRef = useRef<number>(0)
+  const DEBOUNCE_DELAY = 1000 // 1 second
+  const MIN_FETCH_INTERVAL = 5000 // 5 seconds minimum between fetches
 
+  // Fetch real-time data from services
+  const fetchDashboardData = useCallback(async (showToast = false, force = false) => {
+    const now = Date.now()
+    
+    // Performance optimization: prevent excessive API calls
+    if (!force && (isRefreshing || (now - lastFetchTimeRef.current < MIN_FETCH_INTERVAL))) {
+      console.log('Skipping fetch due to rate limiting')
+      return
+    }
+    
+    try {
+      setIsRefreshing(true)
+      setError(null)
+      lastFetchTimeRef.current = now
+      
+      // Fetch data from all services concurrently
+      const [secretsData, apiKeysData, envVarsData] = await Promise.all([
+        SecretsService.getSecrets().catch(err => {
+          console.error('Error fetching secrets:', err)
+          return []
+        }),
+        ApiKeysService.getAll().catch(err => {
+          console.error('Error fetching API keys:', err)
+          return []
+        }),
+        EnvironmentVariablesService.getAll().catch(err => {
+          console.error('Error fetching environment variables:', err)
+          return []
+        })
+      ])
+
+      // Update store with fresh data
+      setSecrets(secretsData)
+      setApiKeys(apiKeysData)
+      setEnvVars(envVarsData)
+
+      // Calculate and update dashboard statistics
+      const stats: DashboardStats = {
+        totalSecrets: secretsData.length,
+        totalApiKeys: apiKeysData.length,
+        totalEnvVars: envVarsData.length,
+        totalFolders: folders.length,
+        recentActivity: [] // Would be fetched from access_logs table
+      }
+      setDashboardStats(stats)
+      setLastRefresh(new Date())
+
+      if (showToast) {
+        toast.success('Dashboard data refreshed successfully')
+      }
+    } catch (error) {
+      console.error('Error fetching dashboard data:', error)
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
+      setError(errorMessage)
+      if (showToast) {
+        toast.error('Failed to refresh dashboard data')
+      }
+    } finally {
+      setIsRefreshing(false)
+      setIsLoading(false)
+    }
+  }, [setSecrets, setApiKeys, setEnvVars, setDashboardStats, folders.length, isRefreshing])
+
+  // Auto-refresh mechanism
   useEffect(() => {
-    // Simulate loading dashboard stats
-    // In a real app, this would fetch from Supabase
-    const loadDashboardStats = async () => {
-      try {
-        setIsLoading(true)
-        
-        // Mock stats based on current data
-        const stats: DashboardStats = {
-          totalSecrets: secrets.length,
-          totalApiKeys: apiKeys.length,
-          totalEnvVars: envVars.length,
-          totalFolders: folders.length,
-          recentActivity: [] // Would be fetched from access_logs table
-        }
-        
-        setDashboardStats(stats)
-      } catch (error) {
-        console.error('Failed to load dashboard stats:', error)
-      } finally {
-        setIsLoading(false)
+    // Initial data fetch
+    fetchDashboardData()
+
+    // Set up auto-refresh every 30 seconds
+    const refreshInterval = setInterval(() => {
+      fetchDashboardData()
+    }, 30000)
+
+    // Listen to dashboard events for real-time updates with debouncing
+    const unsubscribe = dashboardEvents.subscribe((event) => {
+      console.log('Dashboard event received:', event)
+      
+      // Clear existing debounce timeout
+      if (debounceTimeoutRef.current) {
+        clearTimeout(debounceTimeoutRef.current)
+      }
+      
+      // Debounce the refresh to prevent excessive API calls
+      debounceTimeoutRef.current = setTimeout(() => {
+        fetchDashboardData()
+      }, DEBOUNCE_DELAY)
+    })
+
+    return () => {
+      clearInterval(refreshInterval)
+      unsubscribe()
+    }
+  }, [fetchDashboardData])
+
+  // Manual refresh handler
+  const handleManualRefresh = () => {
+    // Force refresh bypasses rate limiting
+    fetchDashboardData(true, true)
+  }
+  
+  // Cleanup debounce timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (debounceTimeoutRef.current) {
+        clearTimeout(debounceTimeoutRef.current)
       }
     }
-
-    loadDashboardStats()
-  }, [secrets, apiKeys, envVars, folders, setDashboardStats])
+  }, [])
 
   const quickActions = [
     {
@@ -131,12 +231,49 @@ const Dashboard: React.FC = () => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Header */}
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">
-            Welcome back, {user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'User'}!
-          </h1>
-          <p className="mt-2 text-gray-600">
-            Here&apos;s an overview of your secure credential management.
-          </p>
+          <div className="flex justify-between items-start">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900">
+                Welcome back, {user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'User'}!
+              </h1>
+              <p className="mt-2 text-gray-600">
+                Here&apos;s an overview of your secure credential management.
+              </p>
+              {error && (
+                <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded-md">
+                  <p className="text-sm text-red-600 flex items-center gap-2">
+                    <AlertCircle className="h-4 w-4" />
+                    {error}
+                  </p>
+                </div>
+              )}
+            </div>
+            <div className="flex items-center space-x-4">
+              <div className="text-sm text-gray-500">
+                {lastRefresh ? (
+                  <>
+                    Last updated: {lastRefresh.toLocaleTimeString()}
+                    {isRefreshing && (
+                      <div className="flex items-center gap-1 mt-1">
+                        <div className="animate-pulse h-2 w-2 bg-blue-500 rounded-full"></div>
+                        <span className="text-xs text-blue-600">Updating...</span>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  'Loading...' 
+                )}
+              </div>
+              <button
+                onClick={handleManualRefresh}
+                disabled={isRefreshing}
+                className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
+              >
+                <RefreshCw className={`w-4 h-4 mr-2 ${isRefreshing ? 'animate-spin' : ''}`} />
+                Refresh
+              </button>
+            </div>
+          </div>
         </div>
 
         {/* Stats Cards */}
@@ -147,8 +284,13 @@ const Dashboard: React.FC = () => {
               <Link
                 key={card.name}
                 to={card.href}
-                className="bg-white overflow-hidden shadow-sm rounded-lg hover:shadow-md transition-shadow duration-200"
+                className="bg-white overflow-hidden shadow-sm rounded-lg hover:shadow-md transition-shadow duration-200 relative"
               >
+                {isRefreshing && (
+                  <div className="absolute inset-0 bg-white bg-opacity-50 flex items-center justify-center rounded-lg">
+                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+                  </div>
+                )}
                 <div className="p-6">
                   <div className="flex items-center">
                     <div className="flex-shrink-0">

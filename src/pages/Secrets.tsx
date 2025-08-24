@@ -1,14 +1,17 @@
 import React, { useState, useEffect } from 'react'
-import { Plus, Search, Filter, Eye, EyeOff, Copy, Edit, Trash2, Folder, Tag } from 'lucide-react'
+import { Search, Plus, Eye, EyeOff, Copy, Edit, Trash2, Filter, Folder, Tag } from 'lucide-react'
 import { toast } from 'sonner'
 import { SecretsService } from '../services/secrets'
 import { CredentialFoldersService } from '../services/credentialFolders'
-import type { Database } from '../types/database'
-
-type Secret = Database['public']['Tables']['secrets']['Row']
-type CredentialFolder = Database['public']['Tables']['credential_folders']['Row']
+import { AddSecretForm } from '../components/AddSecretForm'
+import type { Secret, CredentialFolder } from '../types/database'
 
 interface SecretsPageProps {}
+
+interface DecryptedSecretData {
+  id: string
+  value: string
+}
 
 export default function Secrets({}: SecretsPageProps) {
   const [secrets, setSecrets] = useState<Secret[]>([])
@@ -19,7 +22,12 @@ export default function Secrets({}: SecretsPageProps) {
   const [selectedTag, setSelectedTag] = useState<string>('')
   const [showFilters, setShowFilters] = useState(false)
   const [visibleSecrets, setVisibleSecrets] = useState<Set<string>>(new Set())
+  const [decryptedSecrets, setDecryptedSecrets] = useState<Map<string, string>>(new Map())
   const [showCreateModal, setShowCreateModal] = useState(false)
+  const [showMasterPasswordModal, setShowMasterPasswordModal] = useState(false)
+  const [masterPassword, setMasterPassword] = useState('')
+  const [currentSecretId, setCurrentSecretId] = useState<string | null>(null)
+  const [actionType, setActionType] = useState<'view' | 'copy'>('view')
 
   // Load secrets and folders
   useEffect(() => {
@@ -31,7 +39,7 @@ export default function Secrets({}: SecretsPageProps) {
       setLoading(true)
       const [secretsData, foldersData] = await Promise.all([
         SecretsService.getSecrets(),
-        CredentialFoldersService.getFolders()
+        CredentialFoldersService.getAll()
       ])
       setSecrets(secretsData)
       setFolders(foldersData)
@@ -63,15 +71,24 @@ export default function Secrets({}: SecretsPageProps) {
   )).sort()
 
   const toggleSecretVisibility = (secretId: string) => {
-    setVisibleSecrets(prev => {
-      const newSet = new Set(prev)
-      if (newSet.has(secretId)) {
+    if (visibleSecrets.has(secretId)) {
+      // Hide the secret
+      setVisibleSecrets(prev => {
+        const newSet = new Set(prev)
         newSet.delete(secretId)
-      } else {
-        newSet.add(secretId)
-      }
-      return newSet
-    })
+        return newSet
+      })
+      setDecryptedSecrets(prev => {
+        const newMap = new Map(prev)
+        newMap.delete(secretId)
+        return newMap
+      })
+    } else {
+      // Show master password prompt to decrypt
+      setCurrentSecretId(secretId)
+      setActionType('view')
+      setShowMasterPasswordModal(true)
+    }
   }
 
   const copyToClipboard = async (text: string, label: string) => {
@@ -81,6 +98,53 @@ export default function Secrets({}: SecretsPageProps) {
     } catch (error) {
       toast.error('Failed to copy to clipboard')
     }
+  }
+
+  const copySecretPassword = (secretId: string) => {
+    if (decryptedSecrets.has(secretId)) {
+      // Already decrypted, copy directly
+      const decryptedValue = decryptedSecrets.get(secretId)!
+      copyToClipboard(decryptedValue, 'Password')
+    } else {
+      // Show master password prompt to decrypt
+      setCurrentSecretId(secretId)
+      setActionType('copy')
+      setShowMasterPasswordModal(true)
+    }
+  }
+
+  const handleMasterPasswordSubmit = async () => {
+    if (!currentSecretId || !masterPassword.trim()) {
+      toast.error('Please enter the master password')
+      return
+    }
+
+    try {
+      const decryptedSecret = await SecretsService.getSecret(currentSecretId, masterPassword)
+      
+      if (actionType === 'view') {
+        // Store decrypted value and show it
+        setDecryptedSecrets(prev => new Map(prev).set(currentSecretId, decryptedSecret.password))
+        setVisibleSecrets(prev => new Set(prev).add(currentSecretId))
+      } else if (actionType === 'copy') {
+        // Copy to clipboard
+        copyToClipboard(decryptedSecret.password, 'Password')
+      }
+      
+      // Close modal and reset state
+      setShowMasterPasswordModal(false)
+      setMasterPassword('')
+      setCurrentSecretId(null)
+    } catch (error) {
+      console.error('Error decrypting secret:', error)
+      toast.error('Failed to decrypt secret. Please check your master password.')
+    }
+  }
+
+  const handleMasterPasswordCancel = () => {
+    setShowMasterPasswordModal(false)
+    setMasterPassword('')
+    setCurrentSecretId(null)
   }
 
   const handleDeleteSecret = async (secretId: string) => {
@@ -306,7 +370,9 @@ export default function Secrets({}: SecretsPageProps) {
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-medium text-gray-500 w-20">Password:</span>
                         <span className="text-sm text-gray-900 font-mono">
-                          {visibleSecrets.has(secret.id) ? '••••••••••••' : '••••••••••••'}
+                          {visibleSecrets.has(secret.id) && decryptedSecrets.has(secret.id) 
+                            ? decryptedSecrets.get(secret.id) 
+                            : '••••••••••••'}
                         </span>
                         <button
                           onClick={() => toggleSecretVisibility(secret.id)}
@@ -319,10 +385,7 @@ export default function Secrets({}: SecretsPageProps) {
                           )}
                         </button>
                         <button
-                          onClick={() => {
-                            // In a real app, you'd decrypt and copy the actual password
-                            toast.success('Password copied to clipboard')
-                          }}
+                          onClick={() => copySecretPassword(secret.id)}
                           className="p-1 text-gray-400 hover:text-gray-600 transition-colors"
                         >
                           <Copy className="w-3 h-3" />
@@ -382,18 +445,53 @@ export default function Secrets({}: SecretsPageProps) {
         </div>
       </div>
 
-      {/* TODO: Add CreateSecretModal component */}
-      {showCreateModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md">
-            <h2 className="text-xl font-semibold mb-4">Create Secret</h2>
-            <p className="text-gray-600 mb-4">Create secret modal coming soon...</p>
-            <button
-              onClick={() => setShowCreateModal(false)}
-              className="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-lg"
-            >
-              Close
-            </button>
+      {/* Add Secret Form */}
+      <AddSecretForm
+        isOpen={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+        onSuccess={() => {
+          loadData()
+        }}
+        folderId={selectedFolder}
+      />
+
+      {/* Master Password Modal */}
+      {showMasterPasswordModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">
+              Enter Master Password
+            </h3>
+            <p className="text-sm text-gray-600 mb-4">
+              Please enter your master password to {actionType === 'view' ? 'view' : 'copy'} this secret.
+            </p>
+            <input
+              type="password"
+              value={masterPassword}
+              onChange={(e) => setMasterPassword(e.target.value)}
+              placeholder="Master password"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent mb-4"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  handleMasterPasswordSubmit()
+                }
+              }}
+              autoFocus
+            />
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={handleMasterPasswordCancel}
+                className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleMasterPasswordSubmit}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+              >
+                {actionType === 'view' ? 'View' : 'Copy'}
+              </button>
+            </div>
           </div>
         </div>
       )}

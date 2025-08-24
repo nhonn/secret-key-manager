@@ -1,27 +1,22 @@
 import React, { useState, useEffect } from 'react'
 import { Plus, Search, Eye, EyeOff, Copy, Edit, Trash2, Key, ExternalLink, Calendar } from 'lucide-react'
 import { toast } from 'sonner'
-import { supabase } from '../lib/supabase'
-import { EncryptionService } from '../services/encryption'
+import { ApiKeysService, DecryptedApiKey } from '../services/apiKeys'
+import { AddApiKeyForm } from '../components/AddApiKeyForm'
 import type { Database } from '../types/database'
 
 type ApiKey = Database['public']['Tables']['api_keys']['Row']
-type ApiKeyInsert = Database['public']['Tables']['api_keys']['Insert']
-type ApiKeyUpdate = Database['public']['Tables']['api_keys']['Update']
-
-interface DecryptedApiKey extends ApiKey {
-  decrypted_key?: string
-}
+type ApiKeyWithDecrypted = ApiKey & { decrypted_key?: string }
 
 interface ApiKeysPageProps {}
 
 export default function ApiKeys({}: ApiKeysPageProps) {
-  const [apiKeys, setApiKeys] = useState<DecryptedApiKey[]>([])
+  const [apiKeys, setApiKeys] = useState<ApiKeyWithDecrypted[]>([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
   const [visibleKeys, setVisibleKeys] = useState<Set<string>>(new Set())
   const [showCreateModal, setShowCreateModal] = useState(false)
-  const [editingKey, setEditingKey] = useState<DecryptedApiKey | null>(null)
+  const [editingKey, setEditingKey] = useState<ApiKey | null>(null)
   const [masterPassword, setMasterPassword] = useState('')
   const [showPasswordPrompt, setShowPasswordPrompt] = useState(false)
 
@@ -33,23 +28,8 @@ export default function ApiKeys({}: ApiKeysPageProps) {
   const loadApiKeys = async () => {
     try {
       setLoading(true)
-      const { data: user } = await supabase.auth.getUser()
-      if (!user.user) {
-        throw new Error('User not authenticated')
-      }
-
-      const { data, error } = await supabase
-        .from('api_keys')
-        .select('*')
-        .eq('user_id', user.user.id)
-        .order('created_at', { ascending: false })
-
-      if (error) {
-        console.error('Error loading API keys:', error)
-        throw new Error(`Failed to load API keys: ${error.message}`)
-      }
-
-      setApiKeys(data || [])
+      const apiKeysData = await ApiKeysService.getAll()
+      setApiKeys(apiKeysData)
     } catch (error) {
       console.error('Error loading API keys:', error)
       toast.error('Failed to load API keys')
@@ -95,15 +75,11 @@ export default function ApiKeys({}: ApiKeysPageProps) {
     if (!editingKey) return
 
     try {
-      const decryptedKey = await EncryptionService.decrypt({
-        data: editingKey.encrypted_key!,
-        iv: editingKey.encryption_iv!,
-        salt: editingKey.encryption_salt!
-      }, password)
+      const decryptedApiKey = await ApiKeysService.getById(editingKey.id, password)
       
       // Update the key in state with decrypted value
       setApiKeys(prev => prev.map(key => 
-        key.id === editingKey.id ? { ...key, decrypted_key: decryptedKey } : key
+        key.id === editingKey.id ? { ...key, decrypted_key: decryptedApiKey.decrypted_key } : key
       ))
       
       // Mark as visible
@@ -127,22 +103,13 @@ export default function ApiKeys({}: ApiKeysPageProps) {
     }
   }
 
-  const handleDeleteKey = async (apiKey: DecryptedApiKey) => {
+  const handleDeleteKey = async (apiKey: ApiKeyWithDecrypted) => {
     if (!confirm(`Are you sure you want to delete the API key "${apiKey.name}"? This action cannot be undone.`)) {
       return
     }
 
     try {
-      const { error } = await supabase
-        .from('api_keys')
-        .delete()
-        .eq('id', apiKey.id)
-
-      if (error) {
-        console.error('Error deleting API key:', error)
-        throw new Error(`Failed to delete API key: ${error.message}`)
-      }
-
+      await ApiKeysService.delete(apiKey.id)
       setApiKeys(prev => prev.filter(k => k.id !== apiKey.id))
       toast.success('API key deleted successfully')
     } catch (error) {
@@ -361,6 +328,17 @@ export default function ApiKeys({}: ApiKeysPageProps) {
         </div>
       </div>
 
+      {/* Add API Key Modal */}
+      <AddApiKeyForm
+        isOpen={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+        onSuccess={() => {
+          setShowCreateModal(false)
+          loadApiKeys()
+          toast.success('API key created successfully')
+        }}
+      />
+
       {/* Password Prompt Modal */}
       {showPasswordPrompt && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
@@ -405,21 +383,7 @@ export default function ApiKeys({}: ApiKeysPageProps) {
         </div>
       )}
 
-      {/* TODO: Add CreateApiKeyModal component */}
-      {showCreateModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md">
-            <h2 className="text-xl font-semibold mb-4">Add API Key</h2>
-            <p className="text-gray-600 mb-4">Create API key modal coming soon...</p>
-            <button
-              onClick={() => setShowCreateModal(false)}
-              className="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-lg"
-            >
-              Close
-            </button>
-          </div>
-        </div>
-      )}
+
     </div>
   )
 }

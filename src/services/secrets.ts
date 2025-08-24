@@ -8,6 +8,7 @@ type SecretUpdate = Database['public']['Tables']['secrets']['Update']
 
 export interface DecryptedSecret extends Omit<Secret, 'encrypted_value' | 'encryption_iv' | 'encryption_salt'> {
   value: string // Decrypted value
+  password?: string
 }
 
 export interface CreateSecretData {
@@ -106,7 +107,8 @@ export class SecretsService {
       
       return {
         ...secretWithoutEncryption,
-        value: decryptedValue
+        value: decryptedValue,
+        password: decryptedValue
       }
     } catch (error) {
       console.error('Get secret error:', error)

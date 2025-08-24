@@ -57,6 +57,13 @@ export class CredentialFoldersService {
    * Retrieves all folders for the current user
    */
   static async getFolders(): Promise<CredentialFolder[]> {
+    return this.getAll()
+  }
+
+  /**
+   * Retrieves all folders for the current user (alias for getFolders)
+   */
+  static async getAll(): Promise<CredentialFolder[]> {
     try {
       const { data: user } = await supabase.auth.getUser()
       if (!user.user) {

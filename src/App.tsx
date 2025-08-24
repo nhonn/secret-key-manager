@@ -18,6 +18,7 @@ import ApiKeys from './pages/ApiKeys'
 import EnvironmentVariables from './pages/EnvironmentVariables'
 import CredentialFolders from './pages/CredentialFolders'
 import Settings from './pages/Settings'
+import TestApiKeys from './pages/TestApiKeys'
 
 function App() {
   const { setUser, checkAuth, addToast } = useAuthStore()
@@ -120,6 +121,12 @@ function App() {
               <Layout>
                 <Settings />
               </Layout>
+            </ProtectedRoute>
+          } />
+          
+          <Route path="/test/api-keys" element={
+            <ProtectedRoute>
+              <TestApiKeys />
             </ProtectedRoute>
           } />
           

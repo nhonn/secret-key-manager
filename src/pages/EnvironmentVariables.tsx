@@ -1,13 +1,11 @@
 import React, { useState, useEffect } from 'react'
 import { Plus, Search, Eye, EyeOff, Copy, Edit, Trash2, Settings, Download, Upload, Filter } from 'lucide-react'
 import { toast } from 'sonner'
-import { supabase } from '../lib/supabase'
-import { EncryptionService } from '../services/encryption'
+import { EnvironmentVariablesService, DecryptedEnvironmentVariable } from '../services/environmentVariables'
+import { AddEnvironmentVariableForm } from '../components/AddEnvironmentVariableForm'
 import type { Database } from '../types/database'
 
 type EnvironmentVariable = Database['public']['Tables']['environment_variables']['Row']
-type EnvironmentVariableInsert = Database['public']['Tables']['environment_variables']['Insert']
-type EnvironmentVariableUpdate = Database['public']['Tables']['environment_variables']['Update']
 
 interface DecryptedEnvVar extends EnvironmentVariable {
   decrypted_value?: string
@@ -36,23 +34,8 @@ export default function EnvironmentVariables({}: EnvironmentVariablesPageProps) 
   const loadEnvironmentVariables = async () => {
     try {
       setLoading(true)
-      const { data: user } = await supabase.auth.getUser()
-      if (!user.user) {
-        throw new Error('User not authenticated')
-      }
-
-      const { data, error } = await supabase
-        .from('environment_variables')
-        .select('*')
-        .eq('user_id', user.user.id)
-        .order('created_at', { ascending: false })
-
-      if (error) {
-        console.error('Error loading environment variables:', error)
-        throw new Error(`Failed to load environment variables: ${error.message}`)
-      }
-
-      setEnvVars(data || [])
+      const envVarsData = await EnvironmentVariablesService.getAll()
+      setEnvVars(envVarsData)
     } catch (error) {
       console.error('Error loading environment variables:', error)
       toast.error('Failed to load environment variables')
@@ -101,15 +84,11 @@ export default function EnvironmentVariables({}: EnvironmentVariablesPageProps) 
     if (!varToDecrypt) return
 
     try {
-      const decryptedValue = await EncryptionService.decrypt({
-        data: varToDecrypt.encrypted_value!,
-        iv: varToDecrypt.encryption_iv!,
-        salt: varToDecrypt.encryption_salt!
-      }, password)
+      const decryptedEnvVar = await EnvironmentVariablesService.getById(varToDecrypt.id, password)
       
       // Update the variable in state with decrypted value
       setEnvVars(prev => prev.map(envVar => 
-        envVar.id === varToDecrypt.id ? { ...envVar, decrypted_value: decryptedValue } : envVar
+        envVar.id === varToDecrypt.id ? { ...envVar, decrypted_value: decryptedEnvVar.decrypted_value } : envVar
       ))
       
       // Mark as visible
@@ -139,16 +118,7 @@ export default function EnvironmentVariables({}: EnvironmentVariablesPageProps) 
     }
 
     try {
-      const { error } = await supabase
-        .from('environment_variables')
-        .delete()
-        .eq('id', envVar.id)
-
-      if (error) {
-        console.error('Error deleting environment variable:', error)
-        throw new Error(`Failed to delete environment variable: ${error.message}`)
-      }
-
+      await EnvironmentVariablesService.delete(envVar.id)
       setEnvVars(prev => prev.filter(v => v.id !== envVar.id))
       toast.success('Environment variable deleted successfully')
     } catch (error) {
@@ -169,12 +139,8 @@ export default function EnvironmentVariables({}: EnvironmentVariablesPageProps) 
       const envFileContent = await Promise.all(
         envVarsForEnvironment.map(async (envVar) => {
           try {
-            const decryptedValue = await EncryptionService.decrypt({
-              data: envVar.encrypted_value,
-              iv: envVar.encryption_iv!,
-              salt: envVar.encryption_salt!
-            }, masterPassword)
-            return `${envVar.name}=${decryptedValue}`
+            const decryptedEnvVar = await EnvironmentVariablesService.getById(envVar.id, masterPassword)
+            return `${envVar.name}=${decryptedEnvVar.decrypted_value}`
           } catch (error) {
             console.warn(`Failed to decrypt ${envVar.name}:`, error)
             return `# ${envVar.name}=<FAILED_TO_DECRYPT>`
@@ -492,21 +458,15 @@ export default function EnvironmentVariables({}: EnvironmentVariablesPageProps) 
         </div>
       )}
 
-      {/* TODO: Add CreateEnvironmentVariableModal component */}
-      {showCreateModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md">
-            <h2 className="text-xl font-semibold mb-4">Add Environment Variable</h2>
-            <p className="text-gray-600 mb-4">Create environment variable modal coming soon...</p>
-            <button
-              onClick={() => setShowCreateModal(false)}
-              className="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-lg"
-            >
-              Close
-            </button>
-          </div>
-        </div>
-      )}
+      {/* Add Environment Variable Modal */}
+      <AddEnvironmentVariableForm
+        isOpen={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+        onSuccess={() => {
+          setShowCreateModal(false)
+          loadEnvironmentVariables()
+        }}
+      />
     </div>
   )
 }
