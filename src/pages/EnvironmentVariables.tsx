@@ -1,0 +1,512 @@
+import React, { useState, useEffect } from 'react'
+import { Plus, Search, Eye, EyeOff, Copy, Edit, Trash2, Settings, Download, Upload, Filter } from 'lucide-react'
+import { toast } from 'sonner'
+import { supabase } from '../lib/supabase'
+import { EncryptionService } from '../services/encryption'
+import type { Database } from '../types/database'
+
+type EnvironmentVariable = Database['public']['Tables']['environment_variables']['Row']
+type EnvironmentVariableInsert = Database['public']['Tables']['environment_variables']['Insert']
+type EnvironmentVariableUpdate = Database['public']['Tables']['environment_variables']['Update']
+
+interface DecryptedEnvVar extends EnvironmentVariable {
+  decrypted_value?: string
+}
+
+interface EnvironmentVariablesPageProps {}
+
+export default function EnvironmentVariables({}: EnvironmentVariablesPageProps) {
+  const [envVars, setEnvVars] = useState<DecryptedEnvVar[]>([])
+  const [loading, setLoading] = useState(true)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [selectedEnvironment, setSelectedEnvironment] = useState<string>('')
+  const [showFilters, setShowFilters] = useState(false)
+  const [visibleVars, setVisibleVars] = useState<Set<string>>(new Set())
+  const [showCreateModal, setShowCreateModal] = useState(false)
+  const [editingVar, setEditingVar] = useState<DecryptedEnvVar | null>(null)
+  const [masterPassword, setMasterPassword] = useState('')
+  const [showPasswordPrompt, setShowPasswordPrompt] = useState(false)
+  const [varToDecrypt, setVarToDecrypt] = useState<DecryptedEnvVar | null>(null)
+
+  // Load environment variables
+  useEffect(() => {
+    loadEnvironmentVariables()
+  }, [])
+
+  const loadEnvironmentVariables = async () => {
+    try {
+      setLoading(true)
+      const { data: user } = await supabase.auth.getUser()
+      if (!user.user) {
+        throw new Error('User not authenticated')
+      }
+
+      const { data, error } = await supabase
+        .from('environment_variables')
+        .select('*')
+        .eq('user_id', user.user.id)
+        .order('created_at', { ascending: false })
+
+      if (error) {
+        console.error('Error loading environment variables:', error)
+        throw new Error(`Failed to load environment variables: ${error.message}`)
+      }
+
+      setEnvVars(data || [])
+    } catch (error) {
+      console.error('Error loading environment variables:', error)
+      toast.error('Failed to load environment variables')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Get unique environments
+  const environments = Array.from(new Set(envVars.map(v => v.environment))).sort()
+
+  // Filter environment variables
+  const filteredEnvVars = envVars.filter(envVar => {
+    const matchesSearch = !searchQuery || 
+      envVar.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      envVar.description?.toLowerCase().includes(searchQuery.toLowerCase())
+    
+    const matchesEnvironment = !selectedEnvironment || envVar.environment === selectedEnvironment
+    
+    return matchesSearch && matchesEnvironment
+  })
+
+  const toggleVarVisibility = async (varId: string) => {
+    if (visibleVars.has(varId)) {
+      // Hide the variable
+      setVisibleVars(prev => {
+        const newSet = new Set(prev)
+        newSet.delete(varId)
+        return newSet
+      })
+      // Remove decrypted value from state
+      setEnvVars(prev => prev.map(envVar => 
+        envVar.id === varId ? { ...envVar, decrypted_value: undefined } : envVar
+      ))
+    } else {
+      // Show password prompt to decrypt and show the variable
+      const varToDecrypt = envVars.find(v => v.id === varId)
+      if (varToDecrypt) {
+        setVarToDecrypt(varToDecrypt)
+        setShowPasswordPrompt(true)
+      }
+    }
+  }
+
+  const decryptAndShowVar = async (password: string) => {
+    if (!varToDecrypt) return
+
+    try {
+      const decryptedValue = await EncryptionService.decrypt({
+        data: varToDecrypt.encrypted_value!,
+        iv: varToDecrypt.encryption_iv!,
+        salt: varToDecrypt.encryption_salt!
+      }, password)
+      
+      // Update the variable in state with decrypted value
+      setEnvVars(prev => prev.map(envVar => 
+        envVar.id === varToDecrypt.id ? { ...envVar, decrypted_value: decryptedValue } : envVar
+      ))
+      
+      // Mark as visible
+      setVisibleVars(prev => new Set([...prev, varToDecrypt.id]))
+      
+      setShowPasswordPrompt(false)
+      setVarToDecrypt(null)
+      setMasterPassword('')
+    } catch (error) {
+      console.error('Error decrypting environment variable:', error)
+      toast.error('Failed to decrypt environment variable. Please check your password.')
+    }
+  }
+
+  const copyToClipboard = async (text: string, label: string) => {
+    try {
+      await navigator.clipboard.writeText(text)
+      toast.success(`${label} copied to clipboard`)
+    } catch (error) {
+      toast.error('Failed to copy to clipboard')
+    }
+  }
+
+  const handleDeleteVar = async (envVar: DecryptedEnvVar) => {
+    if (!confirm(`Are you sure you want to delete the environment variable "${envVar.name}"? This action cannot be undone.`)) {
+      return
+    }
+
+    try {
+      const { error } = await supabase
+        .from('environment_variables')
+        .delete()
+        .eq('id', envVar.id)
+
+      if (error) {
+        console.error('Error deleting environment variable:', error)
+        throw new Error(`Failed to delete environment variable: ${error.message}`)
+      }
+
+      setEnvVars(prev => prev.filter(v => v.id !== envVar.id))
+      toast.success('Environment variable deleted successfully')
+    } catch (error) {
+      console.error('Error deleting environment variable:', error)
+      toast.error('Failed to delete environment variable')
+    }
+  }
+
+  const exportEnvFile = async (environment: string) => {
+    if (!masterPassword) {
+      toast.error('Please enter your master password first')
+      return
+    }
+
+    try {
+      const envVarsForEnvironment = envVars.filter(v => v.environment === environment)
+      
+      const envFileContent = await Promise.all(
+        envVarsForEnvironment.map(async (envVar) => {
+          try {
+            const decryptedValue = await EncryptionService.decrypt({
+              data: envVar.encrypted_value,
+              iv: envVar.encryption_iv!,
+              salt: envVar.encryption_salt!
+            }, masterPassword)
+            return `${envVar.name}=${decryptedValue}`
+          } catch (error) {
+            console.warn(`Failed to decrypt ${envVar.name}:`, error)
+            return `# ${envVar.name}=<FAILED_TO_DECRYPT>`
+          }
+        })
+      )
+
+      const content = [
+        `# Environment variables for ${environment}`,
+        `# Generated on ${new Date().toISOString()}`,
+        '',
+        ...envFileContent
+      ].join('\n')
+
+      const blob = new Blob([content], { type: 'text/plain' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `.env.${environment.toLowerCase()}`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+
+      toast.success(`Environment file exported for ${environment}`)
+    } catch (error) {
+      console.error('Error exporting environment file:', error)
+      toast.error('Failed to export environment file')
+    }
+  }
+
+  const getEnvironmentColor = (environment: string) => {
+    switch (environment.toLowerCase()) {
+      case 'production': return 'bg-red-100 text-red-800'
+      case 'staging': return 'bg-yellow-100 text-yellow-800'
+      case 'development': return 'bg-green-100 text-green-800'
+      case 'testing': return 'bg-blue-100 text-blue-800'
+      default: return 'bg-gray-100 text-gray-800'
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 p-6">
+        <div className="max-w-7xl mx-auto">
+          <div className="animate-pulse">
+            <div className="h-8 bg-gray-200 rounded w-1/4 mb-6"></div>
+            <div className="space-y-4">
+              {[...Array(5)].map((_, i) => (
+                <div key={i} className="h-24 bg-gray-200 rounded-lg"></div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50 p-6">
+      <div className="max-w-7xl mx-auto">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">Environment Variables</h1>
+            <p className="text-gray-600 mt-1">
+              Manage your encrypted environment variables and configurations
+            </p>
+          </div>
+          <div className="flex items-center gap-3">
+            {environments.length > 0 && (
+              <div className="flex items-center gap-2">
+                <input
+                  type="password"
+                  placeholder="Master password for export"
+                  value={masterPassword}
+                  onChange={(e) => setMasterPassword(e.target.value)}
+                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+                <select
+                  onChange={(e) => e.target.value && exportEnvFile(e.target.value)}
+                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  defaultValue=""
+                >
+                  <option value="" disabled>Export .env</option>
+                  {environments.map(env => (
+                    <option key={env} value={env}>{env}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            <button
+              onClick={() => setShowCreateModal(true)}
+              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
+            >
+              <Plus className="w-4 h-4" />
+              Add Variable
+            </button>
+          </div>
+        </div>
+
+        {/* Search and Filters */}
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-6">
+          <div className="flex items-center gap-4 mb-4">
+            <div className="flex-1 relative">
+              <Search className="w-5 h-5 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Search environment variables..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
+            <button
+              onClick={() => setShowFilters(!showFilters)}
+              className={`px-4 py-2 rounded-lg flex items-center gap-2 transition-colors ${
+                showFilters
+                  ? 'bg-blue-100 text-blue-700 border border-blue-200'
+                  : 'bg-gray-100 text-gray-700 border border-gray-200 hover:bg-gray-200'
+              }`}
+            >
+              <Filter className="w-4 h-4" />
+              Filters
+            </button>
+          </div>
+
+          {/* Filter Options */}
+          {showFilters && (
+            <div className="flex flex-wrap gap-4 pt-4 border-t border-gray-200">
+              <div className="flex items-center gap-2">
+                <Settings className="w-4 h-4 text-gray-500" />
+                <select
+                  value={selectedEnvironment}
+                  onChange={(e) => setSelectedEnvironment(e.target.value)}
+                  className="border border-gray-300 rounded px-3 py-1 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="">All Environments</option>
+                  {environments.map(env => (
+                    <option key={env} value={env}>
+                      {env}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {(selectedEnvironment || searchQuery) && (
+                <button
+                  onClick={() => {
+                    setSelectedEnvironment('')
+                    setSearchQuery('')
+                  }}
+                  className="text-sm text-blue-600 hover:text-blue-700 underline"
+                >
+                  Clear Filters
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Results Summary */}
+        <div className="mb-4">
+          <p className="text-sm text-gray-600">
+            Showing {filteredEnvVars.length} of {envVars.length} environment variables
+          </p>
+        </div>
+
+        {/* Environment Variables List */}
+        <div className="space-y-4">
+          {filteredEnvVars.length === 0 ? (
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-12 text-center">
+              <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Settings className="w-8 h-8 text-gray-400" />
+              </div>
+              <h3 className="text-lg font-medium text-gray-900 mb-2">
+                {envVars.length === 0 ? 'No environment variables yet' : 'No variables found'}
+              </h3>
+              <p className="text-gray-600 mb-6">
+                {envVars.length === 0
+                  ? 'Add your first environment variable to get started'
+                  : 'Try adjusting your search or filters'}
+              </p>
+              {envVars.length === 0 && (
+                <button
+                  onClick={() => setShowCreateModal(true)}
+                  className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg transition-colors"
+                >
+                  Add First Variable
+                </button>
+              )}
+            </div>
+          ) : (
+            filteredEnvVars.map(envVar => (
+              <div key={envVar.id} className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+                <div className="flex items-start justify-between">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-3 mb-2">
+                      <h3 className="text-lg font-semibold text-gray-900 font-mono">
+                        {envVar.name}
+                      </h3>
+                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${getEnvironmentColor(envVar.environment)}`}>
+                        {envVar.environment}
+                      </span>
+                    </div>
+                    
+                    {envVar.description && (
+                      <p className="text-gray-600 mb-3">{envVar.description}</p>
+                    )}
+
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-gray-500 w-16">Value:</span>
+                        <span className="text-sm text-gray-900 font-mono">
+                          {visibleVars.has(envVar.id) && envVar.decrypted_value
+                            ? envVar.decrypted_value
+                            : '••••••••••••••••••••••••••••••••••••••••'
+                          }
+                        </span>
+                        <button
+                          onClick={() => toggleVarVisibility(envVar.id)}
+                          className="p-1 text-gray-400 hover:text-gray-600 transition-colors"
+                        >
+                          {visibleVars.has(envVar.id) ? (
+                            <EyeOff className="w-3 h-3" />
+                          ) : (
+                            <Eye className="w-3 h-3" />
+                          )}
+                        </button>
+                        {visibleVars.has(envVar.id) && envVar.decrypted_value && (
+                          <button
+                            onClick={() => copyToClipboard(envVar.decrypted_value!, 'Environment variable')}
+                            className="p-1 text-gray-400 hover:text-gray-600 transition-colors"
+                          >
+                            <Copy className="w-3 h-3" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="mt-3 text-xs text-gray-500">
+                      Created {new Date(envVar.created_at).toLocaleDateString()}
+                      {envVar.updated_at !== envVar.created_at && (
+                        <span> • Updated {new Date(envVar.updated_at).toLocaleDateString()}</span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 ml-4">
+                    <button
+                      onClick={() => {
+                        setEditingVar(envVar)
+                        // TODO: Open edit modal
+                        toast.info('Edit functionality coming soon')
+                      }}
+                      className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                    >
+                      <Edit className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => handleDeleteVar(envVar)}
+                      className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+
+      {/* Password Prompt Modal */}
+      {showPasswordPrompt && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md">
+            <h2 className="text-xl font-semibold mb-4">Enter Master Password</h2>
+            <p className="text-gray-600 mb-4">
+              Please enter your master password to decrypt and view the environment variable.
+            </p>
+            <form onSubmit={(e) => {
+              e.preventDefault()
+              decryptAndShowVar(masterPassword)
+            }}>
+              <input
+                type="password"
+                value={masterPassword}
+                onChange={(e) => setMasterPassword(e.target.value)}
+                placeholder="Master password"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent mb-4"
+                autoFocus
+              />
+              <div className="flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowPasswordPrompt(false)
+                    setVarToDecrypt(null)
+                    setMasterPassword('')
+                  }}
+                  className="px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+                >
+                  Decrypt
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* TODO: Add CreateEnvironmentVariableModal component */}
+      {showCreateModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md">
+            <h2 className="text-xl font-semibold mb-4">Add Environment Variable</h2>
+            <p className="text-gray-600 mb-4">Create environment variable modal coming soon...</p>
+            <button
+              onClick={() => setShowCreateModal(false)}
+              className="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-lg"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
