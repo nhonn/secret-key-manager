@@ -24,7 +24,7 @@ const Landing: React.FC = () => {
     {
       icon: KeyIcon,
       title: 'API Key Management',
-      description: 'Organize and manage all your API keys in secure, categorized folders.'
+      description: 'Organize and manage all your API keys in secure, categorized projects.'
     },
     {
       icon: LockClosedIcon,

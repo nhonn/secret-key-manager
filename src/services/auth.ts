@@ -181,7 +181,7 @@ export class AuthService {
       })
       
       if (user) {
-        // Trigger the database function to create default folders for new users
+        // Trigger the database function to create default projects for new users
         await this.ensureUserSetup(user.id)
       }
 
@@ -202,19 +202,19 @@ export class AuthService {
   }
 
   /**
-   * Ensure user has default credential folders set up
+   * Ensure user has default projects set up
    */
   private static async ensureUserSetup(userId: string): Promise<void> {
     try {
-      console.log('🔧 Setting up default folders for user:', userId)
+      console.log('🔧 Setting up default projects for user:', userId)
       
-      // Call the database function to create default folders if they don't exist
-      const { error } = await (supabase as any).rpc('create_default_credential_folders', {
+      // Call the database function to create default projects if they don't exist
+      const { error } = await (supabase as any).rpc('create_default_projects', {
         target_user_id: userId
       })
 
       if (error) {
-        console.error('❌ Failed to create default folders:', {
+        console.error('❌ Failed to create default projects:', {
           error: error.message,
           code: error.code,
           details: error.details,
@@ -226,7 +226,7 @@ export class AuthService {
         if (error.code === '42501') {
           console.error('🔒 Permission denied - check RLS policies and function permissions')
         } else if (error.code === '23505') {
-          console.warn('⚠️ Folders may already exist for this user (duplicate key error)')
+          console.warn('⚠️ Projects may already exist for this user (duplicate key error)')
         } else if (error.code?.startsWith('23')) {
           console.error('🔗 Database constraint violation:', error.message)
         }
@@ -235,7 +235,7 @@ export class AuthService {
         // But log it prominently for debugging
         console.warn('⚠️ User setup incomplete but authentication will continue')
       } else {
-        console.log('✅ Default folders setup completed successfully for user:', userId)
+        console.log('✅ Default projects setup completed successfully for user:', userId)
       }
     } catch (error) {
       console.error('💥 Unexpected error during user setup:', {
@@ -244,8 +244,8 @@ export class AuthService {
         userId
       })
       
-      // Don't throw - authentication should still succeed even if folder creation fails
-      console.warn('⚠️ User setup failed but authentication will continue')
+      // Don't throw - authentication should still succeed even if project creation fails
+        console.warn('⚠️ User setup failed but authentication will continue')
     }
   }
 

@@ -15,7 +15,7 @@ export interface CreateEnvironmentVariableData {
   value: string;
   environment?: string;
   description?: string;
-  folder_id?: string;
+  project_id?: string;
 }
 
 export interface UpdateEnvironmentVariableData {
@@ -23,7 +23,8 @@ export interface UpdateEnvironmentVariableData {
   value?: string;
   environment?: string;
   description?: string;
-  folder_id?: string;
+  tags?: string[];
+  project_id?: string;
 }
 
 export interface EnvironmentVariableWithDecrypted extends EnvironmentVariable {
@@ -41,8 +42,7 @@ export class EnvironmentVariablesService {
    * Create a new environment variable with encryption
    */
   static async create(
-    data: CreateEnvironmentVariableData,
-    masterPassword: string
+    data: CreateEnvironmentVariableData
   ): Promise<EnvironmentVariable> {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
@@ -63,8 +63,8 @@ export class EnvironmentVariablesService {
       throw new Error('Environment variable name must start with a letter and contain only uppercase letters, numbers, and underscores');
     }
 
-    // Encrypt the value
-    const encryptedData = await EncryptionService.encrypt(data.value, masterPassword);
+    // Encrypt the value using user-based encryption
+    const encryptedData = await EncryptionService.encrypt(data.value);
 
     const insertData: EnvironmentVariableInsert = {
       user_id: user.id,
@@ -73,7 +73,7 @@ export class EnvironmentVariablesService {
       encryption_iv: encryptedData.iv,
       encryption_salt: encryptedData.salt,
       description: data.description?.trim() || null,
-      folder_id: data.folder_id || null,
+      project_id: data.project_id || null,
     };
 
     const { data: envVar, error } = await supabase
@@ -93,7 +93,7 @@ export class EnvironmentVariablesService {
   /**
    * Get a single environment variable by ID
    */
-  static async getById(id: string, masterPassword: string): Promise<DecryptedEnvironmentVariable | null> {
+  static async getById(id: string): Promise<DecryptedEnvironmentVariable | null> {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
       throw new Error('User not authenticated');
@@ -118,14 +118,14 @@ export class EnvironmentVariablesService {
       return null;
     }
 
-    // Decrypt the environment variable value
+    // Decrypt the environment variable value using user-based encryption
     const encryptedData: EncryptedData = {
       data: envVar.encrypted_value!,
       iv: envVar.encryption_iv!,
       salt: envVar.encryption_salt!
     };
 
-    const decryptedValue = await EncryptionService.decrypt(encryptedData, masterPassword);
+    const decryptedValue = await EncryptionService.decrypt(encryptedData);
 
     // Return decrypted environment variable without encryption fields
     const { encrypted_value, encryption_iv, encryption_salt, ...envVarWithoutEncryption } = envVar;
@@ -161,9 +161,9 @@ export class EnvironmentVariablesService {
   }
 
   /**
-   * Get environment variables by folder ID
+   * Get environment variables by project ID
    */
-  static async getByFolder(folderId: string): Promise<EnvironmentVariable[]> {
+  static async getByProject(projectId: string): Promise<EnvironmentVariable[]> {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
       throw new Error('User not authenticated');
@@ -173,11 +173,11 @@ export class EnvironmentVariablesService {
       .from('environment_variables')
       .select('*')
       .eq('user_id', user.id)
-      .eq('folder_id', folderId)
+      .eq('project_id', projectId)
       .order('created_at', { ascending: false });
 
     if (error) {
-      console.error('Error fetching environment variables by folder:', error);
+      console.error('Error fetching environment variables by project:', error);
       throw new Error(`Failed to fetch environment variables: ${error.message}`);
     }
 
@@ -189,14 +189,14 @@ export class EnvironmentVariablesService {
   /**
    * Update an environment variable
    */
-  static async update(id: string, data: UpdateEnvironmentVariableData, masterPassword?: string): Promise<EnvironmentVariable> {
+  static async update(id: string, data: UpdateEnvironmentVariableData): Promise<EnvironmentVariable> {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
       throw new Error('User not authenticated');
     }
 
     // Validate that the environment variable exists and belongs to the user
-    const existingEnvVar = await EnvironmentVariablesService.getById(id, masterPassword || '');
+    const existingEnvVar = await EnvironmentVariablesService.getById(id);
     if (!existingEnvVar) {
       throw new Error('Environment variable not found');
     }
@@ -222,16 +222,20 @@ export class EnvironmentVariablesService {
       updateData.description = data.description?.trim() || null;
     }
 
-    if (data.folder_id !== undefined) {
-      updateData.folder_id = data.folder_id || null;
+    if (data.project_id !== undefined) {
+      updateData.project_id = data.project_id || null;
+    }
+
+    if (data.tags !== undefined) {
+      updateData.tags = data.tags && data.tags.length > 0 ? data.tags : null;
     }
 
     // Handle value encryption if value is being updated
-    if (data.value !== undefined && masterPassword) {
+    if (data.value !== undefined) {
       if (!data.value.trim()) {
         throw new Error('Environment variable value cannot be empty');
       }
-      const encryptedData = await EncryptionService.encrypt(data.value, masterPassword);
+      const encryptedData = await EncryptionService.encrypt(data.value);
       updateData.encrypted_value = encryptedData.data;
       updateData.encryption_iv = encryptedData.iv;
       updateData.encryption_salt = encryptedData.salt;
@@ -277,7 +281,7 @@ export class EnvironmentVariablesService {
   /**
    * Decrypt an environment variable value
    */
-  static async decrypt(envVar: EnvironmentVariable, masterPassword: string): Promise<string> {
+  static async decrypt(envVar: EnvironmentVariable): Promise<string> {
     if (!envVar.encryption_iv || !envVar.encryption_salt) {
       throw new Error('Environment variable encryption data is missing');
     }
@@ -288,10 +292,10 @@ export class EnvironmentVariablesService {
         iv: envVar.encryption_iv,
         salt: envVar.encryption_salt
       };
-      return await EncryptionService.decrypt(encryptedData, masterPassword);
+      return await EncryptionService.decrypt(encryptedData);
     } catch (error) {
       console.error('Error decrypting environment variable:', error);
-      throw new Error('Failed to decrypt environment variable');
+      throw new Error('Failed to decrypt environment variable - authentication required');
     }
   }
 
@@ -326,13 +330,13 @@ export class EnvironmentVariablesService {
   /**
    * Get environment variables with decrypted values (use with caution)
    */
-  static async getAllWithDecrypted(masterPassword: string): Promise<EnvironmentVariableWithDecrypted[]> {
+  static async getAllWithDecrypted(): Promise<EnvironmentVariableWithDecrypted[]> {
     const envVars = await EnvironmentVariablesService.getAll();
     const decryptedEnvVars: EnvironmentVariableWithDecrypted[] = [];
 
     for (const envVar of envVars) {
       try {
-        const decryptedValue = await EnvironmentVariablesService.decrypt(envVar, masterPassword);
+        const decryptedValue = await EnvironmentVariablesService.decrypt(envVar);
         decryptedEnvVars.push({
           ...envVar,
           value: decryptedValue,
@@ -355,13 +359,13 @@ export class EnvironmentVariablesService {
   /**
    * Generate .env file content from environment variables
    */
-  static async generateEnvFile(masterPassword: string, folderId?: string): Promise<string> {
-    const envVars = folderId ? await EnvironmentVariablesService.getByFolder(folderId) : await EnvironmentVariablesService.getAll();
+  static async generateEnvFile(projectId?: string): Promise<string> {
+    const envVars = projectId ? await EnvironmentVariablesService.getByProject(projectId) : await EnvironmentVariablesService.getAll();
     const lines: string[] = [];
 
     for (const envVar of envVars) {
       try {
-        const decryptedValue = await EnvironmentVariablesService.decrypt(envVar, masterPassword);
+        const decryptedValue = await EnvironmentVariablesService.decrypt(envVar);
         // Add comment if description exists
         if (envVar.description) {
           lines.push(`# ${envVar.description}`);

@@ -5,12 +5,12 @@ import type { DashboardStats } from '../types'
 type Secret = Database['public']['Tables']['secrets']['Row']
 type ApiKey = Database['public']['Tables']['api_keys']['Row']
 type EnvironmentVariable = Database['public']['Tables']['environment_variables']['Row']
-type Folder = Database['public']['Tables']['credential_folders']['Row']
+type Project = Database['public']['Tables']['projects']['Row']
 
 // Event system for real-time updates
 type DashboardUpdateEvent = {
   type: 'data_changed'
-  entity: 'secrets' | 'apiKeys' | 'envVars' | 'folders'
+  entity: 'secrets' | 'apiKeys' | 'envVars' | 'projects'
   action: 'add' | 'update' | 'delete'
   data?: any
 }
@@ -37,7 +37,7 @@ export const dashboardEvents = new DashboardEventEmitter()
 interface AppState {
   // Data state
   secrets: Secret[]
-  folders: Folder[]
+  projects: Project[]
   apiKeys: ApiKey[]
   envVars: EnvironmentVariable[]
   dashboardStats: DashboardStats | null
@@ -45,7 +45,7 @@ interface AppState {
   // UI state
   isLoading: boolean
   searchFilters: { query: string; tags: string[] }
-  selectedFolder: string | null
+  selectedProject: string | null
   
   // Actions for secrets
   setSecrets: (secrets: Secret[]) => void
@@ -53,11 +53,11 @@ interface AppState {
   updateSecret: (id: string, secret: Partial<Secret>) => void
   removeSecret: (id: string) => void
   
-  // Actions for folders
-  setFolders: (folders: Folder[]) => void
-  addFolder: (folder: Folder) => void
-  updateFolder: (id: string, folder: Partial<Folder>) => void
-  removeFolder: (id: string) => void
+  // Actions for projects
+  setProjects: (projects: Project[]) => void
+  addProject: (project: Project) => void
+  updateProject: (id: string, project: Partial<Project>) => void
+  removeProject: (id: string) => void
   
   // Actions for API keys
   setApiKeys: (apiKeys: ApiKey[]) => void
@@ -77,7 +77,7 @@ interface AppState {
   // Actions for UI
   setLoading: (loading: boolean) => void
   setSearchFilters: (filters: { query: string; tags: string[] }) => void
-  setSelectedFolder: (folderId: string | null) => void
+  setSelectedProject: (projectId: string | null) => void
   
   // Utility actions
   clearAllData: () => void
@@ -89,7 +89,7 @@ interface AppState {
 export const useAppStore = create<AppState>()((set, get) => ({
   // Initial state
   secrets: [],
-  folders: [],
+  projects: [],
   apiKeys: [],
   envVars: [],
   dashboardStats: null,
@@ -98,7 +98,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
     query: '',
     tags: []
   },
-  selectedFolder: null,
+  selectedProject: null,
 
   // Actions for secrets
   setSecrets: (secrets) => set({ secrets }),
@@ -115,19 +115,19 @@ export const useAppStore = create<AppState>()((set, get) => ({
     return { secrets: state.secrets.filter(secret => secret.id !== id) }
   }),
 
-  // Actions for folders
-  setFolders: (folders) => set({ folders }),
-  addFolder: (folder) => set((state) => {
-    dashboardEvents.emit({ type: 'data_changed', entity: 'folders', action: 'add', data: folder })
-    return { folders: [folder, ...state.folders] }
+  // Actions for projects
+  setProjects: (projects) => set({ projects }),
+  addProject: (project) => set((state) => {
+    dashboardEvents.emit({ type: 'data_changed', entity: 'projects', action: 'add', data: project })
+    return { projects: [project, ...state.projects] }
   }),
-  updateFolder: (id, folder) => set((state) => {
-    dashboardEvents.emit({ type: 'data_changed', entity: 'folders', action: 'update', data: { id, ...folder } })
-    return { folders: state.folders.map(f => f.id === id ? { ...f, ...folder } : f) }
+  updateProject: (id, project) => set((state) => {
+    dashboardEvents.emit({ type: 'data_changed', entity: 'projects', action: 'update', data: { id, ...project } })
+    return { projects: state.projects.map(p => p.id === id ? { ...p, ...project } : p) }
   }),
-  removeFolder: (id) => set((state) => {
-    dashboardEvents.emit({ type: 'data_changed', entity: 'folders', action: 'delete', data: { id } })
-    return { folders: state.folders.filter(folder => folder.id !== id) }
+  removeProject: (id) => set((state) => {
+    dashboardEvents.emit({ type: 'data_changed', entity: 'projects', action: 'delete', data: { id } })
+    return { projects: state.projects.filter(project => project.id !== id) }
   }),
 
   // Actions for API keys
@@ -168,27 +168,27 @@ export const useAppStore = create<AppState>()((set, get) => ({
   
   setSearchFilters: (filters) => set({ searchFilters: filters }),
   
-  setSelectedFolder: (folderId) => set({ selectedFolder: folderId }),
+  setSelectedProject: (projectId) => set({ selectedProject: projectId }),
 
   // Utility actions
   clearAllData: () => set({
     secrets: [],
-    folders: [],
+    projects: [],
     apiKeys: [],
     envVars: [],
     dashboardStats: null,
     searchFilters: { query: '', tags: [] },
-    selectedFolder: null
+    selectedProject: null
   }),
 
   getFilteredSecrets: () => {
-    const { secrets, searchFilters, selectedFolder } = get()
+    const { secrets, searchFilters, selectedProject } = get()
     let filtered = secrets
 
-    // Filter by folder
-    if (selectedFolder) {
-      // For secrets, we don't have folder_id, so this might need adjustment based on your schema
-      // filtered = filtered.filter(secret => secret.folder_id === selectedFolder)
+    // Filter by project
+    if (selectedProject) {
+      // For secrets, we don't have project_id, so this might need adjustment based on your schema
+      // filtered = filtered.filter(secret => secret.project_id === selectedProject)
     }
 
     // Filter by search query
@@ -212,12 +212,12 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
 
   getFilteredApiKeys: () => {
-    const { apiKeys, searchFilters, selectedFolder } = get()
+    const { apiKeys, searchFilters, selectedProject } = get()
     let filtered = apiKeys
 
-    // Filter by folder
-    if (selectedFolder) {
-      filtered = filtered.filter(apiKey => apiKey.folder_id === selectedFolder)
+    // Filter by project
+    if (selectedProject) {
+      filtered = filtered.filter(apiKey => apiKey.project_id === selectedProject)
     }
 
     // Filter by search query
@@ -234,12 +234,12 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
 
   getFilteredEnvVars: () => {
-    const { envVars, searchFilters, selectedFolder } = get()
+    const { envVars, searchFilters, selectedProject } = get()
     let filtered = envVars
 
-    // Filter by folder
-    if (selectedFolder) {
-      filtered = filtered.filter(envVar => envVar.folder_id === selectedFolder)
+    // Filter by project
+    if (selectedProject) {
+      filtered = filtered.filter(envVar => envVar.project_id === selectedProject)
     }
 
     // Filter by search query

@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import {
   KeyIcon,
   ShieldCheckIcon,
-  FolderIcon,
+  RectangleStackIcon,
   CogIcon,
   PlusIcon,
   EyeIcon,
@@ -27,7 +27,7 @@ const Dashboard: React.FC = () => {
     secrets, 
     apiKeys, 
     envVars, 
-    folders,
+    projects,
     setSecrets,
     setApiKeys,
     setEnvVars
@@ -85,7 +85,7 @@ const Dashboard: React.FC = () => {
         totalSecrets: secretsData.length,
         totalApiKeys: apiKeysData.length,
         totalEnvVars: envVarsData.length,
-        totalFolders: folders.length,
+        totalProjects: projects.length,
         recentActivity: [] // Would be fetched from access_logs table
       }
       setDashboardStats(stats)
@@ -105,7 +105,7 @@ const Dashboard: React.FC = () => {
       setIsRefreshing(false)
       setIsLoading(false)
     }
-  }, [setSecrets, setApiKeys, setEnvVars, setDashboardStats, folders.length, isRefreshing])
+  }, [setSecrets, setApiKeys, setEnvVars, setDashboardStats, projects.length, isRefreshing])
 
   // Auto-refresh mechanism
   useEffect(() => {
@@ -176,10 +176,10 @@ const Dashboard: React.FC = () => {
       color: 'bg-purple-500 hover:bg-purple-600'
     },
     {
-      name: 'Create Folder',
+      name: 'Create Project',
       description: 'Organize your credentials',
-      href: '/credentials/folders/new',
-      icon: FolderIcon,
+      href: '/projects/new',
+      icon: RectangleStackIcon,
       color: 'bg-orange-500 hover:bg-orange-600'
     }
   ]
@@ -207,11 +207,11 @@ const Dashboard: React.FC = () => {
       href: '/credentials/env-vars'
     },
     {
-      name: 'Folders',
-      value: dashboardStats?.totalFolders || 0,
-      icon: FolderIcon,
+      name: 'Projects',
+      value: dashboardStats?.totalProjects || 0,
+      icon: RectangleStackIcon,
       color: 'text-orange-600 bg-orange-100',
-      href: '/credentials/folders'
+      href: '/projects'
     }
   ]
 

@@ -9,6 +9,7 @@ import type { AppUser } from './types'
 import Layout from './components/Layout'
 import ProtectedRoute from './components/ProtectedRoute'
 
+
 // Pages
 import Landing from './pages/Landing'
 import AuthCallback from './pages/AuthCallback'
@@ -16,7 +17,7 @@ import Dashboard from './pages/Dashboard'
 import Secrets from './pages/Secrets'
 import ApiKeys from './pages/ApiKeys'
 import EnvironmentVariables from './pages/EnvironmentVariables'
-import CredentialFolders from './pages/CredentialFolders'
+import Projects from './pages/Projects'
 import Settings from './pages/Settings'
 import TestApiKeys from './pages/TestApiKeys'
 
@@ -108,13 +109,13 @@ function App() {
             </ProtectedRoute>
           } />
           
-          <Route path="/credentials/folders" element={
-            <ProtectedRoute>
-              <Layout>
-                <CredentialFolders />
-              </Layout>
-            </ProtectedRoute>
-          } />
+          <Route path="/projects" element={
+              <ProtectedRoute>
+                <Layout>
+                  <Projects />
+                </Layout>
+              </ProtectedRoute>
+            } />
           
           <Route path="/settings" element={
             <ProtectedRoute>
@@ -133,6 +134,8 @@ function App() {
           {/* Catch all route */}
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>
+        
+
         
         {/* Toast notifications */}
         <Toaster 

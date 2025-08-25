@@ -2,14 +2,14 @@ import React, { useState, useEffect } from 'react'
 import { X, Eye, EyeOff, Plus, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { EnvironmentVariablesService } from '../services/environmentVariables'
-import { CredentialFoldersService } from '../services/credentialFolders'
-import type { CredentialFolder } from '../types/database'
+import { ProjectsService } from '../services/projects'
+import type { Project } from '../types/database'
 
 interface AddEnvironmentVariableFormProps {
   isOpen: boolean
   onClose: () => void
   onSuccess: () => void
-  folderId?: string
+  projectId?: string
 }
 
 interface EnvironmentVariableFormData {
@@ -19,8 +19,7 @@ interface EnvironmentVariableFormData {
   environment: string
   is_sensitive: boolean
   tags: string[]
-  folder_id: string
-  master_password: string
+  project_id: string
 }
 
 const initialFormData: EnvironmentVariableFormData = {
@@ -30,8 +29,7 @@ const initialFormData: EnvironmentVariableFormData = {
   environment: 'development',
   is_sensitive: false,
   tags: [],
-  folder_id: '',
-  master_password: ''
+  project_id: ''
 }
 
 const environments = [
@@ -77,26 +75,26 @@ export const AddEnvironmentVariableForm: React.FC<AddEnvironmentVariableFormProp
   isOpen,
   onClose,
   onSuccess,
-  folderId
+  projectId
 }) => {
   const [formData, setFormData] = useState<EnvironmentVariableFormData>(initialFormData)
-  const [folders, setFolders] = useState<CredentialFolder[]>([])
+  const [projects, setProjects] = useState<Project[]>([])
   const [showValue, setShowValue] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [tagInput, setTagInput] = useState('')
   const [errors, setErrors] = useState<Partial<EnvironmentVariableFormData>>({})
   const [showSuggestions, setShowSuggestions] = useState(false)
-  const [showMasterPassword, setShowMasterPassword] = useState(false)
+
   const [filteredSuggestions, setFilteredSuggestions] = useState<string[]>([])
 
   useEffect(() => {
     if (isOpen) {
-      loadFolders()
-      if (folderId) {
-        setFormData(prev => ({ ...prev, folder_id: folderId }))
+      loadProjects()
+      if (projectId) {
+        setFormData(prev => ({ ...prev, project_id: projectId }))
       }
     }
-  }, [isOpen, folderId])
+  }, [isOpen, projectId])
 
   useEffect(() => {
     if (formData.name) {
@@ -109,13 +107,13 @@ export const AddEnvironmentVariableForm: React.FC<AddEnvironmentVariableFormProp
     }
   }, [formData.name])
 
-  const loadFolders = async () => {
+  const loadProjects = async () => {
     try {
-      const foldersData = await CredentialFoldersService.getAll()
-      setFolders(foldersData)
+      const projectsData = await ProjectsService.getAll()
+      setProjects(projectsData)
     } catch (error) {
-      console.error('Error loading folders:', error)
-      toast.error('Failed to load folders')
+      console.error('Error loading projects:', error)
+      toast.error('Failed to load projects')
     }
   }
 
@@ -132,12 +130,8 @@ export const AddEnvironmentVariableForm: React.FC<AddEnvironmentVariableFormProp
       newErrors.value = 'Value is required'
     }
 
-    if (!formData.folder_id) {
-      newErrors.folder_id = 'Folder is required'
-    }
-
-    if (!formData.master_password.trim()) {
-      newErrors.master_password = 'Master password is required'
+    if (!formData.project_id) {
+      newErrors.project_id = 'Project is required'
     }
 
     setErrors(newErrors)
@@ -196,8 +190,8 @@ export const AddEnvironmentVariableForm: React.FC<AddEnvironmentVariableFormProp
         description: formData.description.trim() || null,
         value: formData.value,
         environment: formData.environment,
-        folder_id: formData.folder_id
-      }, formData.master_password)
+        project_id: formData.project_id
+      })
 
       toast.success('Environment variable created successfully')
       handleClose()
@@ -216,7 +210,7 @@ export const AddEnvironmentVariableForm: React.FC<AddEnvironmentVariableFormProp
     setTagInput('')
     setShowValue(false)
     setShowSuggestions(false)
-    setShowMasterPassword(false)
+
     onClose()
   }
 
@@ -290,27 +284,27 @@ export const AddEnvironmentVariableForm: React.FC<AddEnvironmentVariableFormProp
             />
           </div>
 
-          {/* Folder */}
+          {/* Project */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Folder *
+              Project *
             </label>
             <select
-              value={formData.folder_id}
-              onChange={(e) => handleInputChange('folder_id', e.target.value)}
+              value={formData.project_id}
+              onChange={(e) => handleInputChange('project_id', e.target.value)}
               className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                errors.folder_id ? 'border-red-500' : 'border-gray-300'
+                errors.project_id ? 'border-red-500' : 'border-gray-300'
               }`}
             >
-              <option value="">Select a folder</option>
-              {folders.map(folder => (
-                <option key={folder.id} value={folder.id}>
-                  {folder.name}
+              <option value="">Select a project</option>
+              {projects.map(project => (
+                <option key={project.id} value={project.id}>
+                  {project.name}
                 </option>
               ))}
             </select>
-            {errors.folder_id && (
-              <p className="mt-1 text-sm text-red-600">{errors.folder_id}</p>
+            {errors.project_id && (
+              <p className="mt-1 text-sm text-red-600">{errors.project_id}</p>
             )}
           </div>
 
@@ -365,36 +359,7 @@ export const AddEnvironmentVariableForm: React.FC<AddEnvironmentVariableFormProp
             )}
           </div>
 
-          {/* Master Password */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Master Password *
-            </label>
-            <div className="relative">
-              <input
-                type={showMasterPassword ? 'text' : 'password'}
-                value={formData.master_password}
-                onChange={(e) => handleInputChange('master_password', e.target.value)}
-                className={`w-full px-3 py-2 pr-10 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                  errors.master_password ? 'border-red-500' : 'border-gray-300'
-                }`}
-                placeholder="Enter master password for encryption"
-              />
-              <button
-                type="button"
-                onClick={() => setShowMasterPassword(!showMasterPassword)}
-                className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
-              >
-                {showMasterPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
-            </div>
-            {errors.master_password && (
-              <p className="mt-1 text-sm text-red-600">{errors.master_password}</p>
-            )}
-            <p className="mt-1 text-xs text-gray-500">
-              This password will be used to encrypt the environment variable value
-            </p>
-          </div>
+
 
           {/* Sensitive Toggle */}
           <div>

@@ -15,7 +15,7 @@ export interface CreateSecretData {
   name: string
   value: string
   description?: string
-  folder_id?: string
+  project_id?: string
   tags?: string[]
 }
 
@@ -23,7 +23,7 @@ export interface UpdateSecretData {
   name?: string
   value?: string
   description?: string
-  folder_id?: string
+  project_id?: string
   tags?: string[]
 }
 
@@ -32,12 +32,11 @@ export class SecretsService {
    * Creates a new encrypted secret
    */
   static async createSecret(
-    secretData: CreateSecretData,
-    masterPassword: string
+    secretData: CreateSecretData
   ): Promise<Secret> {
     try {
-      // Encrypt the secret value
-      const encryptedData = await EncryptionService.encrypt(secretData.value, masterPassword)
+      // Encrypt the secret value using user-based encryption
+      const encryptedData = await EncryptionService.encrypt(secretData.value)
       
       const { data: user } = await supabase.auth.getUser()
       if (!user.user) {
@@ -51,7 +50,7 @@ export class SecretsService {
         encrypted_value: encryptedData.data,
         encryption_iv: encryptedData.iv,
         encryption_salt: encryptedData.salt,
-        folder_id: secretData.folder_id || null,
+        project_id: secretData.project_id || null,
         tags: secretData.tags || null
       }
 
@@ -76,7 +75,7 @@ export class SecretsService {
   /**
    * Retrieves and decrypts a secret by ID
    */
-  static async getSecret(id: string, masterPassword: string): Promise<DecryptedSecret> {
+  static async getSecret(id: string): Promise<DecryptedSecret> {
     try {
       const { data, error } = await supabase
         .from('secrets')
@@ -93,14 +92,14 @@ export class SecretsService {
         throw new Error('Secret not found')
       }
 
-      // Decrypt the secret value
+      // Decrypt the secret value using user-based encryption
       const encryptedData: EncryptedData = {
         data: data.encrypted_value!,
         iv: data.encryption_iv!,
         salt: data.encryption_salt!
       }
 
-      const decryptedValue = await EncryptionService.decrypt(encryptedData, masterPassword)
+      const decryptedValue = await EncryptionService.decrypt(encryptedData)
 
       // Return decrypted secret without encryption fields
       const { encrypted_value, encryption_iv, encryption_salt, ...secretWithoutEncryption } = data
@@ -149,21 +148,20 @@ export class SecretsService {
    */
   static async updateSecret(
     id: string,
-    updateData: UpdateSecretData,
-    masterPassword?: string
+    updateData: UpdateSecretData
   ): Promise<Secret> {
     try {
       let secretUpdate: SecretUpdate = {
         name: updateData.name,
         description: updateData.description,
-        folder_id: updateData.folder_id,
+        project_id: updateData.project_id,
         tags: updateData.tags,
         updated_at: new Date().toISOString()
       }
 
-      // If value is being updated, encrypt it
-      if (updateData.value && masterPassword) {
-        const encryptedData = await EncryptionService.encrypt(updateData.value, masterPassword)
+      // If value is being updated, encrypt it using user-based encryption
+      if (updateData.value) {
+        const encryptedData = await EncryptionService.encrypt(updateData.value)
         secretUpdate = {
           ...secretUpdate,
           encrypted_value: encryptedData.data,
@@ -241,9 +239,9 @@ export class SecretsService {
   }
 
   /**
-   * Gets secrets by folder
+   * Gets secrets by project
    */
-  static async getSecretsByFolder(folderId: string): Promise<Secret[]> {
+  static async getSecretsByProject(projectId: string): Promise<Secret[]> {
     try {
       const { data: user } = await supabase.auth.getUser()
       if (!user.user) {
@@ -254,17 +252,17 @@ export class SecretsService {
         .from('secrets')
         .select('*')
         .eq('user_id', user.user.id)
-        .eq('folder_id', folderId)
+        .eq('project_id', projectId)
         .order('created_at', { ascending: false })
 
       if (error) {
-        console.error('Error fetching secrets by folder:', error)
-        throw new Error(`Failed to fetch secrets by folder: ${error.message}`)
+        console.error('Error fetching secrets by project:', error)
+        throw new Error(`Failed to fetch secrets by project: ${error.message}`)
       }
 
       return data || []
     } catch (error) {
-      console.error('Get secrets by folder error:', error)
+      console.error('Get secrets by project error:', error)
       throw error
     }
   }

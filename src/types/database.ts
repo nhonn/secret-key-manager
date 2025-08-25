@@ -21,7 +21,7 @@ export interface Database {
           access_count: number | null
           created_at: string | null
           updated_at: string | null
-          folder_id: string | null
+          project_id: string | null
           encryption_iv: string | null
           encryption_salt: string | null
           url: string | null
@@ -38,7 +38,7 @@ export interface Database {
           access_count?: number | null
           created_at?: string | null
           updated_at?: string | null
-          folder_id?: string | null
+          project_id?: string | null
           encryption_iv?: string | null
           encryption_salt?: string | null
           url?: string | null
@@ -55,7 +55,7 @@ export interface Database {
           access_count?: number | null
           created_at?: string | null
           updated_at?: string | null
-          folder_id?: string | null
+          project_id?: string | null
           encryption_iv?: string | null
           encryption_salt?: string | null
           url?: string | null
@@ -63,10 +63,10 @@ export interface Database {
         }
         Relationships: [
           {
-            foreignKeyName: "secrets_folder_id_fkey"
-            columns: ["folder_id"]
+            foreignKeyName: "secrets_project_id_fkey"
+            columns: ["project_id"]
             isOneToOne: false
-            referencedRelation: "credential_folders"
+            referencedRelation: "projects"
             referencedColumns: ["id"]
           },
           {
@@ -78,7 +78,7 @@ export interface Database {
           }
         ]
       }
-      credential_folders: {
+      projects: {
           Row: {
             color: string | null
             created_at: string
@@ -111,14 +111,14 @@ export interface Database {
           }
           Relationships: [
             {
-              foreignKeyName: "credential_folders_parent_id_fkey"
+              foreignKeyName: "projects_parent_id_fkey"
               columns: ["parent_id"]
               isOneToOne: false
-              referencedRelation: "credential_folders"
+              referencedRelation: "projects"
               referencedColumns: ["id"]
             },
             {
-              foreignKeyName: "credential_folders_user_id_fkey"
+              foreignKeyName: "projects_user_id_fkey"
               columns: ["user_id"]
               isOneToOne: false
               referencedRelation: "users"
@@ -130,7 +130,7 @@ export interface Database {
         Row: {
           id: string
           user_id: string
-          folder_id: string | null
+          project_id: string | null
           name: string
           encrypted_key: string
           service: string | null
@@ -145,7 +145,7 @@ export interface Database {
         Insert: {
           id?: string
           user_id: string
-          folder_id?: string | null
+          project_id?: string | null
           name: string
           encrypted_key: string
           service?: string | null
@@ -160,7 +160,7 @@ export interface Database {
         Update: {
           id?: string
           user_id?: string
-          folder_id?: string | null
+          project_id?: string | null
           name?: string
           encrypted_key?: string
           service?: string | null
@@ -181,10 +181,10 @@ export interface Database {
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "api_keys_folder_id_fkey"
-            columns: ["folder_id"]
+            foreignKeyName: "api_keys_project_id_fkey"
+            columns: ["project_id"]
             isOneToOne: false
-            referencedRelation: "credential_folders"
+            referencedRelation: "projects"
             referencedColumns: ["id"]
           }
         ]
@@ -193,7 +193,7 @@ export interface Database {
         Row: {
           id: string
           user_id: string
-          folder_id: string | null
+          project_id: string | null
           name: string
           encrypted_value: string
           environment: string | null
@@ -206,7 +206,7 @@ export interface Database {
         Insert: {
           id?: string
           user_id: string
-          folder_id?: string | null
+          project_id?: string | null
           name: string
           encrypted_value: string
           environment?: string | null
@@ -219,7 +219,7 @@ export interface Database {
         Update: {
           id?: string
           user_id?: string
-          folder_id?: string | null
+          project_id?: string | null
           name?: string
           encrypted_value?: string
           environment?: string | null
@@ -238,10 +238,10 @@ export interface Database {
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "environment_variables_folder_id_fkey"
-            columns: ["folder_id"]
+            foreignKeyName: "environment_variables_project_id_fkey"
+            columns: ["project_id"]
             isOneToOne: false
-            referencedRelation: "credential_folders"
+            referencedRelation: "projects"
             referencedColumns: ["id"]
           }
         ]
@@ -312,5 +312,5 @@ export interface Database {
 export type Secret = Database['public']['Tables']['secrets']['Row']
 export type ApiKey = Database['public']['Tables']['api_keys']['Row']
 export type EnvironmentVariable = Database['public']['Tables']['environment_variables']['Row']
-export type CredentialFolder = Database['public']['Tables']['credential_folders']['Row']
+export type Project = Database['public']['Tables']['projects']['Row']
 export type AccessLog = Database['public']['Tables']['access_logs']['Row']

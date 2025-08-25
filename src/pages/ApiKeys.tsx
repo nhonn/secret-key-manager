@@ -3,6 +3,7 @@ import { Plus, Search, Eye, EyeOff, Copy, Edit, Trash2, Key, ExternalLink, Calen
 import { toast } from 'sonner'
 import { ApiKeysService, DecryptedApiKey } from '../services/apiKeys'
 import { AddApiKeyForm } from '../components/AddApiKeyForm'
+import { EditApiKeyForm } from '../components/EditApiKeyForm'
 import type { Database } from '../types/database'
 
 type ApiKey = Database['public']['Tables']['api_keys']['Row']
@@ -16,9 +17,9 @@ export default function ApiKeys({}: ApiKeysPageProps) {
   const [searchQuery, setSearchQuery] = useState('')
   const [visibleKeys, setVisibleKeys] = useState<Set<string>>(new Set())
   const [showCreateModal, setShowCreateModal] = useState(false)
+  const [showEditModal, setShowEditModal] = useState(false)
   const [editingKey, setEditingKey] = useState<ApiKey | null>(null)
-  const [masterPassword, setMasterPassword] = useState('')
-  const [showPasswordPrompt, setShowPasswordPrompt] = useState(false)
+
 
   // Load API keys
   useEffect(() => {
@@ -43,7 +44,6 @@ export default function ApiKeys({}: ApiKeysPageProps) {
     if (!searchQuery) return true
     return (
       apiKey.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      apiKey.service.toLowerCase().includes(searchQuery.toLowerCase()) ||
       apiKey.description?.toLowerCase().includes(searchQuery.toLowerCase())
     )
   })
@@ -61,38 +61,25 @@ export default function ApiKeys({}: ApiKeysPageProps) {
         key.id === keyId ? { ...key, decrypted_key: undefined } : key
       ))
     } else {
-      // Show password prompt to decrypt and show the key
-      setShowPasswordPrompt(true)
-      // Store which key we want to decrypt
-      const keyToDecrypt = apiKeys.find(k => k.id === keyId)
-      if (keyToDecrypt) {
-        setEditingKey(keyToDecrypt)
+      // Decrypt and show the key directly
+      try {
+        const decryptedApiKey = await ApiKeysService.getById(keyId)
+        
+        // Update the key in state with decrypted value
+        setApiKeys(prev => prev.map(key => 
+          key.id === keyId ? { ...key, decrypted_key: decryptedApiKey.decrypted_key } : key
+        ))
+        
+        // Mark as visible
+        setVisibleKeys(prev => new Set([...prev, keyId]))
+      } catch (error) {
+        console.error('Error decrypting API key:', error)
+        toast.error('Failed to decrypt API key. Please ensure you are authenticated.')
       }
     }
   }
 
-  const decryptAndShowKey = async (password: string) => {
-    if (!editingKey) return
 
-    try {
-      const decryptedApiKey = await ApiKeysService.getById(editingKey.id, password)
-      
-      // Update the key in state with decrypted value
-      setApiKeys(prev => prev.map(key => 
-        key.id === editingKey.id ? { ...key, decrypted_key: decryptedApiKey.decrypted_key } : key
-      ))
-      
-      // Mark as visible
-      setVisibleKeys(prev => new Set([...prev, editingKey.id]))
-      
-      setShowPasswordPrompt(false)
-      setEditingKey(null)
-      setMasterPassword('')
-    } catch (error) {
-      console.error('Error decrypting API key:', error)
-      toast.error('Failed to decrypt API key. Please check your password.')
-    }
-  }
 
   const copyToClipboard = async (text: string, label: string) => {
     try {
@@ -237,15 +224,7 @@ export default function ApiKeys({}: ApiKeysPageProps) {
                         )}
                       </div>
                       
-                      <div className="flex items-center gap-2 mb-3">
-                        <span className="text-sm font-medium text-gray-500">Service:</span>
-                        <span className="text-sm text-gray-900">{apiKey.service}</span>
-                        {apiKey.service && (
-                          <span className="text-sm text-gray-600">
-                            Service: {apiKey.service}
-                          </span>
-                        )}
-                      </div>
+
 
                       {apiKey.description && (
                         <p className="text-gray-600 mb-3">{apiKey.description}</p>
@@ -306,8 +285,7 @@ export default function ApiKeys({}: ApiKeysPageProps) {
                       <button
                         onClick={() => {
                           setEditingKey(apiKey)
-                          // TODO: Open edit modal
-                          toast.info('Edit functionality coming soon')
+                          setShowEditModal(true)
                         }}
                         className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
                       >
@@ -339,49 +317,22 @@ export default function ApiKeys({}: ApiKeysPageProps) {
         }}
       />
 
-      {/* Password Prompt Modal */}
-      {showPasswordPrompt && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md">
-            <h2 className="text-xl font-semibold mb-4">Enter Master Password</h2>
-            <p className="text-gray-600 mb-4">
-              Please enter your master password to decrypt and view the API key.
-            </p>
-            <form onSubmit={(e) => {
-              e.preventDefault()
-              decryptAndShowKey(masterPassword)
-            }}>
-              <input
-                type="password"
-                value={masterPassword}
-                onChange={(e) => setMasterPassword(e.target.value)}
-                placeholder="Master password"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent mb-4"
-                autoFocus
-              />
-              <div className="flex justify-end gap-3">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowPasswordPrompt(false)
-                    setEditingKey(null)
-                    setMasterPassword('')
-                  }}
-                  className="px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
-                >
-                  Decrypt
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      {/* Edit API Key Modal */}
+      <EditApiKeyForm
+        isOpen={showEditModal}
+        onClose={() => {
+          setShowEditModal(false)
+          setEditingKey(null)
+        }}
+        onSuccess={() => {
+          loadApiKeys()
+          setShowEditModal(false)
+          setEditingKey(null)
+        }}
+        apiKey={editingKey}
+      />
+
+
 
 
     </div>

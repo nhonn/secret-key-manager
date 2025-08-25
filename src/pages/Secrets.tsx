@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react'
-import { Search, Plus, Eye, EyeOff, Copy, Edit, Trash2, Filter, Folder, Tag } from 'lucide-react'
+import { Search, Plus, Eye, EyeOff, Copy, Edit, Trash2, Filter, Package, Tag } from 'lucide-react'
 import { toast } from 'sonner'
 import { SecretsService } from '../services/secrets'
-import { CredentialFoldersService } from '../services/credentialFolders'
+import { ProjectsService } from '../services/projects'
 import { AddSecretForm } from '../components/AddSecretForm'
-import type { Secret, CredentialFolder } from '../types/database'
+import { EditSecretForm } from '../components/EditSecretForm'
+import type { Secret, Project } from '../types/database'
 
 interface SecretsPageProps {}
 
@@ -15,21 +16,19 @@ interface DecryptedSecretData {
 
 export default function Secrets({}: SecretsPageProps) {
   const [secrets, setSecrets] = useState<Secret[]>([])
-  const [folders, setFolders] = useState<CredentialFolder[]>([])
+  const [projects, setProjects] = useState<Project[]>([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
-  const [selectedFolder, setSelectedFolder] = useState<string>('')
+  const [selectedProject, setSelectedProject] = useState<string>('')
   const [selectedTag, setSelectedTag] = useState<string>('')
   const [showFilters, setShowFilters] = useState(false)
   const [visibleSecrets, setVisibleSecrets] = useState<Set<string>>(new Set())
   const [decryptedSecrets, setDecryptedSecrets] = useState<Map<string, string>>(new Map())
   const [showCreateModal, setShowCreateModal] = useState(false)
-  const [showMasterPasswordModal, setShowMasterPasswordModal] = useState(false)
-  const [masterPassword, setMasterPassword] = useState('')
-  const [currentSecretId, setCurrentSecretId] = useState<string | null>(null)
-  const [actionType, setActionType] = useState<'view' | 'copy'>('view')
+  const [showEditModal, setShowEditModal] = useState(false)
+  const [editingSecret, setEditingSecret] = useState<Secret | null>(null)
 
-  // Load secrets and folders
+  // Load secrets and projects
   useEffect(() => {
     loadData()
   }, [])
@@ -37,12 +36,12 @@ export default function Secrets({}: SecretsPageProps) {
   const loadData = async () => {
     try {
       setLoading(true)
-      const [secretsData, foldersData] = await Promise.all([
+      const [secretsData, projectsData] = await Promise.all([
         SecretsService.getSecrets(),
-        CredentialFoldersService.getAll()
+        ProjectsService.getAll()
       ])
       setSecrets(secretsData)
-      setFolders(foldersData)
+      setProjects(projectsData)
     } catch (error) {
       console.error('Error loading data:', error)
       toast.error('Failed to load secrets')
@@ -57,12 +56,12 @@ export default function Secrets({}: SecretsPageProps) {
       secret.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       secret.description?.toLowerCase().includes(searchQuery.toLowerCase())
     
-    const matchesFolder = !selectedFolder || secret.folder_id === selectedFolder
+    const matchesProject = !selectedProject || secret.project_id === selectedProject
     
     const matchesTag = !selectedTag || 
       (secret.tags && secret.tags.includes(selectedTag))
     
-    return matchesSearch && matchesFolder && matchesTag
+    return matchesSearch && matchesProject && matchesTag
   })
 
   // Get unique tags from all secrets
@@ -70,7 +69,7 @@ export default function Secrets({}: SecretsPageProps) {
     secrets.flatMap(secret => secret.tags || [])
   )).sort()
 
-  const toggleSecretVisibility = (secretId: string) => {
+  const toggleSecretVisibility = async (secretId: string) => {
     if (visibleSecrets.has(secretId)) {
       // Hide the secret
       setVisibleSecrets(prev => {
@@ -84,10 +83,15 @@ export default function Secrets({}: SecretsPageProps) {
         return newMap
       })
     } else {
-      // Show master password prompt to decrypt
-      setCurrentSecretId(secretId)
-      setActionType('view')
-      setShowMasterPasswordModal(true)
+      // Directly decrypt and show the secret
+      try {
+        const decryptedSecret = await SecretsService.getSecret(secretId)
+        setDecryptedSecrets(prev => new Map(prev).set(secretId, decryptedSecret.password))
+        setVisibleSecrets(prev => new Set(prev).add(secretId))
+      } catch (error) {
+        console.error('Error decrypting secret:', error)
+        toast.error('Failed to decrypt secret')
+      }
     }
   }
 
@@ -100,52 +104,24 @@ export default function Secrets({}: SecretsPageProps) {
     }
   }
 
-  const copySecretPassword = (secretId: string) => {
+  const copySecretPassword = async (secretId: string) => {
     if (decryptedSecrets.has(secretId)) {
       // Already decrypted, copy directly
       const decryptedValue = decryptedSecrets.get(secretId)!
       copyToClipboard(decryptedValue, 'Password')
     } else {
-      // Show master password prompt to decrypt
-      setCurrentSecretId(secretId)
-      setActionType('copy')
-      setShowMasterPasswordModal(true)
-    }
-  }
-
-  const handleMasterPasswordSubmit = async () => {
-    if (!currentSecretId || !masterPassword.trim()) {
-      toast.error('Please enter the master password')
-      return
-    }
-
-    try {
-      const decryptedSecret = await SecretsService.getSecret(currentSecretId, masterPassword)
-      
-      if (actionType === 'view') {
-        // Store decrypted value and show it
-        setDecryptedSecrets(prev => new Map(prev).set(currentSecretId, decryptedSecret.password))
-        setVisibleSecrets(prev => new Set(prev).add(currentSecretId))
-      } else if (actionType === 'copy') {
-        // Copy to clipboard
+      // Directly decrypt and copy
+      try {
+        const decryptedSecret = await SecretsService.getSecret(secretId)
         copyToClipboard(decryptedSecret.password, 'Password')
+      } catch (error) {
+        console.error('Error decrypting secret:', error)
+        toast.error('Failed to decrypt secret')
       }
-      
-      // Close modal and reset state
-      setShowMasterPasswordModal(false)
-      setMasterPassword('')
-      setCurrentSecretId(null)
-    } catch (error) {
-      console.error('Error decrypting secret:', error)
-      toast.error('Failed to decrypt secret. Please check your master password.')
     }
   }
 
-  const handleMasterPasswordCancel = () => {
-    setShowMasterPasswordModal(false)
-    setMasterPassword('')
-    setCurrentSecretId(null)
-  }
+
 
   const handleDeleteSecret = async (secretId: string) => {
     if (!confirm('Are you sure you want to delete this secret? This action cannot be undone.')) {
@@ -162,16 +138,16 @@ export default function Secrets({}: SecretsPageProps) {
     }
   }
 
-  const getFolderName = (folderId: string | null) => {
-    if (!folderId) return 'No Folder'
-    const folder = folders.find(f => f.id === folderId)
-    return folder?.name || 'Unknown Folder'
+  const getProjectName = (projectId: string | null) => {
+    if (!projectId) return 'No Project'
+    const project = projects.find(p => p.id === projectId)
+    return project?.name || 'Unknown Project'
   }
 
-  const getFolderColor = (folderId: string | null) => {
-    if (!folderId) return '#6B7280'
-    const folder = folders.find(f => f.id === folderId)
-    return folder?.color || '#6B7280'
+  const getProjectColor = (projectId: string | null) => {
+    if (!projectId) return '#6B7280'
+    const project = projects.find(p => p.id === projectId)
+    return project?.color || '#6B7280'
   }
 
   if (loading) {
@@ -241,16 +217,16 @@ export default function Secrets({}: SecretsPageProps) {
           {showFilters && (
             <div className="flex flex-wrap gap-4 pt-4 border-t border-gray-200">
               <div className="flex items-center gap-2">
-                <Folder className="w-4 h-4 text-gray-500" />
+                <Package className="w-4 h-4 text-gray-500" />
                 <select
-                  value={selectedFolder}
-                  onChange={(e) => setSelectedFolder(e.target.value)}
+                  value={selectedProject}
+                  onChange={(e) => setSelectedProject(e.target.value)}
                   className="border border-gray-300 rounded px-3 py-1 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 >
-                  <option value="">All Folders</option>
-                  {folders.map(folder => (
-                    <option key={folder.id} value={folder.id}>
-                      {folder.name}
+                  <option value="">All Projects</option>
+                  {projects.map(project => (
+                    <option key={project.id} value={project.id}>
+                      {project.name}
                     </option>
                   ))}
                 </select>
@@ -272,10 +248,10 @@ export default function Secrets({}: SecretsPageProps) {
                 </select>
               </div>
 
-              {(selectedFolder || selectedTag || searchQuery) && (
+              {(selectedProject || selectedTag || searchQuery) && (
                 <button
                   onClick={() => {
-                    setSelectedFolder('')
+                    setSelectedProject('')
                     setSelectedTag('')
                     setSearchQuery('')
                   }}
@@ -330,9 +306,9 @@ export default function Secrets({}: SecretsPageProps) {
                       </h3>
                       <div
                         className="px-2 py-1 rounded-full text-xs font-medium text-white"
-                        style={{ backgroundColor: getFolderColor(secret.folder_id) }}
+                        style={{ backgroundColor: getProjectColor(secret.project_id) }}
                       >
-                        {getFolderName(secret.folder_id)}
+                        {getProjectName(secret.project_id)}
                       </div>
                     </div>
                     
@@ -424,8 +400,8 @@ export default function Secrets({}: SecretsPageProps) {
                   <div className="flex items-center gap-2 ml-4">
                     <button
                       onClick={() => {
-                        // TODO: Open edit modal
-                        toast.info('Edit functionality coming soon')
+                        setEditingSecret(secret)
+                        setShowEditModal(true)
                       }}
                       className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
                     >
@@ -452,49 +428,25 @@ export default function Secrets({}: SecretsPageProps) {
         onSuccess={() => {
           loadData()
         }}
-        folderId={selectedFolder}
+        projectId={selectedProject}
       />
 
-      {/* Master Password Modal */}
-      {showMasterPasswordModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md mx-4">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">
-              Enter Master Password
-            </h3>
-            <p className="text-sm text-gray-600 mb-4">
-              Please enter your master password to {actionType === 'view' ? 'view' : 'copy'} this secret.
-            </p>
-            <input
-              type="password"
-              value={masterPassword}
-              onChange={(e) => setMasterPassword(e.target.value)}
-              placeholder="Master password"
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent mb-4"
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  handleMasterPasswordSubmit()
-                }
-              }}
-              autoFocus
-            />
-            <div className="flex justify-end gap-3">
-              <button
-                onClick={handleMasterPasswordCancel}
-                className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleMasterPasswordSubmit}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
-              >
-                {actionType === 'view' ? 'View' : 'Copy'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Edit Secret Form */}
+      <EditSecretForm
+        isOpen={showEditModal}
+        onClose={() => {
+          setShowEditModal(false)
+          setEditingSecret(null)
+        }}
+        onSuccess={() => {
+          loadData()
+          setShowEditModal(false)
+          setEditingSecret(null)
+        }}
+        secret={editingSecret}
+      />
+
+
     </div>
   )
 }

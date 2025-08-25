@@ -16,7 +16,7 @@ export interface CreateApiKeyData {
   key: string;
   description?: string;
   service?: string;
-  folder_id?: string;
+  project_id?: string;
   expires_at?: string;
 }
 
@@ -24,8 +24,9 @@ export interface UpdateApiKeyData {
   name?: string;
   key?: string;
   description?: string;
-  service?: string;
-  folder_id?: string;
+  url?: string;
+  tags?: string[];
+  project_id?: string;
   expires_at?: string;
 }
 
@@ -39,8 +40,7 @@ export class ApiKeysService {
    * Create a new API key with encryption
    */
   static async create(
-    data: CreateApiKeyData,
-    masterPassword: string
+    data: CreateApiKeyData
   ): Promise<ApiKey> {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
@@ -55,8 +55,8 @@ export class ApiKeysService {
       throw new Error('API key value is required');
     }
 
-    // Encrypt the API key
-    const encryptedData = await EncryptionService.encrypt(data.key, masterPassword);
+    // Encrypt the API key using user-based encryption
+    const encryptedData = await EncryptionService.encrypt(data.key);
 
     const insertData: ApiKeyInsert = {
       user_id: user.id,
@@ -66,7 +66,7 @@ export class ApiKeysService {
       encryption_salt: encryptedData.salt,
       description: data.description?.trim() || null,
       service: data.service?.trim() || null,
-      folder_id: data.folder_id || null,
+      project_id: data.project_id || null,
       expires_at: data.expires_at || null,
     };
 
@@ -94,7 +94,7 @@ export class ApiKeysService {
   /**
    * Get a single API key by ID
    */
-  static async getById(id: string, masterPassword: string): Promise<DecryptedApiKey | null> {
+  static async getById(id: string): Promise<DecryptedApiKey | null> {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
       throw new Error('User not authenticated');
@@ -126,14 +126,14 @@ export class ApiKeysService {
       return null;
     }
 
-    // Decrypt the API key
+    // Decrypt the API key using user-based encryption
     const encryptedData: EncryptedData = {
       data: apiKey.encrypted_key!,
       iv: apiKey.encryption_iv!,
       salt: apiKey.encryption_salt!
     };
 
-    const decryptedKey = await EncryptionService.decrypt(encryptedData, masterPassword);
+    const decryptedKey = await EncryptionService.decrypt(encryptedData);
 
     // Return decrypted API key without encryption fields
     const { encrypted_key, encryption_iv, encryption_salt, ...apiKeyWithoutEncryption } = apiKey;
@@ -169,9 +169,9 @@ export class ApiKeysService {
   }
 
   /**
-   * Get API keys by folder ID
+   * Get API keys by project ID
    */
-  static async getByFolder(folderId: string): Promise<ApiKey[]> {
+  static async getByProject(projectId: string): Promise<ApiKey[]> {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
       throw new Error('User not authenticated');
@@ -181,11 +181,11 @@ export class ApiKeysService {
       .from('api_keys')
       .select('*')
       .eq('user_id', user.id)
-      .eq('folder_id', folderId)
+      .eq('project_id', projectId)
       .order('created_at', { ascending: false });
 
     if (error) {
-      console.error('Error fetching API keys by folder:', error);
+      console.error('Error fetching API keys by project:', error);
       throw new Error(`Failed to fetch API keys: ${error.message}`);
     }
 
@@ -197,14 +197,14 @@ export class ApiKeysService {
   /**
    * Update an API key
    */
-  static async update(id: string, data: UpdateApiKeyData, masterPassword?: string): Promise<ApiKey> {
+  static async update(id: string, data: UpdateApiKeyData): Promise<ApiKey> {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
       throw new Error('User not authenticated');
     }
 
     // Validate that the API key exists and belongs to the user
-    const existingApiKey = await ApiKeysService.getById(id, masterPassword || '');
+    const existingApiKey = await ApiKeysService.getById(id);
     if (!existingApiKey) {
       throw new Error('API key not found');
     }
@@ -225,12 +225,16 @@ export class ApiKeysService {
       updateData.description = data.description?.trim() || null;
     }
 
-    if (data.service !== undefined) {
-      updateData.service = data.service?.trim() || null;
+    if (data.url !== undefined) {
+      updateData.url = data.url?.trim() || null;
     }
 
-    if (data.folder_id !== undefined) {
-      updateData.folder_id = data.folder_id || null;
+    if (data.tags !== undefined) {
+      updateData.tags = data.tags && data.tags.length > 0 ? data.tags : null;
+    }
+
+    if (data.project_id !== undefined) {
+      updateData.project_id = data.project_id || null;
     }
 
     if (data.expires_at !== undefined) {
@@ -238,11 +242,11 @@ export class ApiKeysService {
     }
 
     // Handle key encryption if key is being updated
-    if (data.key !== undefined && masterPassword) {
+    if (data.key !== undefined) {
       if (!data.key.trim()) {
         throw new Error('API key value cannot be empty');
       }
-      const encryptedData = await EncryptionService.encrypt(data.key, masterPassword);
+      const encryptedData = await EncryptionService.encrypt(data.key);
       updateData.encrypted_key = encryptedData.data;
       updateData.encryption_iv = encryptedData.iv;
       updateData.encryption_salt = encryptedData.salt;
@@ -288,7 +292,7 @@ export class ApiKeysService {
   /**
    * Decrypt an API key
    */
-  static async decrypt(apiKey: ApiKey, masterPassword: string): Promise<string> {
+  static async decrypt(apiKey: ApiKey): Promise<string> {
     if (!apiKey.encryption_iv || !apiKey.encryption_salt) {
       throw new Error('API key encryption data is missing');
     }
@@ -299,10 +303,10 @@ export class ApiKeysService {
         iv: apiKey.encryption_iv,
         salt: apiKey.encryption_salt
       };
-      return await EncryptionService.decrypt(encryptedData, masterPassword);
+      return await EncryptionService.decrypt(encryptedData);
     } catch (error) {
       console.error('Error decrypting API key:', error);
-      throw new Error('Failed to decrypt API key');
+      throw new Error('Failed to decrypt API key - authentication required');
     }
   }
 
@@ -337,13 +341,13 @@ export class ApiKeysService {
   /**
    * Get API keys with decrypted values (use with caution)
    */
-  static async getAllWithDecrypted(masterPassword: string): Promise<ApiKeyWithDecrypted[]> {
+  static async getAllWithDecrypted(): Promise<ApiKeyWithDecrypted[]> {
     const apiKeys = await ApiKeysService.getAll();
     const decryptedApiKeys: ApiKeyWithDecrypted[] = [];
 
     for (const apiKey of apiKeys) {
       try {
-        const decryptedKey = await ApiKeysService.decrypt(apiKey, masterPassword);
+        const decryptedKey = await ApiKeysService.decrypt(apiKey);
         decryptedApiKeys.push({
           ...apiKey,
           key: decryptedKey,

@@ -2,14 +2,14 @@ import React, { useState, useEffect } from 'react'
 import { X, Eye, EyeOff, Plus, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { SecretsService } from '../services/secrets'
-import { CredentialFoldersService } from '../services/credentialFolders'
-import type { CredentialFolder } from '../types/database'
+import { ProjectsService } from '../services/projects'
+import type { Project } from '../types/database'
 
 interface AddSecretFormProps {
   isOpen: boolean
   onClose: () => void
   onSuccess: () => void
-  folderId?: string
+  projectId?: string
 }
 
 interface SecretFormData {
@@ -20,8 +20,7 @@ interface SecretFormData {
   url: string
   notes: string
   tags: string[]
-  folder_id: string
-  master_password: string
+  project_id: string
 }
 
 const initialFormData: SecretFormData = {
@@ -32,18 +31,17 @@ const initialFormData: SecretFormData = {
   url: '',
   notes: '',
   tags: [],
-  folder_id: '',
-  master_password: ''
+  project_id: ''
 }
 
 export const AddSecretForm: React.FC<AddSecretFormProps> = ({
   isOpen,
   onClose,
   onSuccess,
-  folderId
+  projectId
 }) => {
   const [formData, setFormData] = useState<SecretFormData>(initialFormData)
-  const [folders, setFolders] = useState<CredentialFolder[]>([])
+  const [projects, setProjects] = useState<Project[]>([])
   const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [tagInput, setTagInput] = useState('')
@@ -51,20 +49,20 @@ export const AddSecretForm: React.FC<AddSecretFormProps> = ({
 
   useEffect(() => {
     if (isOpen) {
-      loadFolders()
-      if (folderId) {
-        setFormData(prev => ({ ...prev, folder_id: folderId }))
+      loadProjects()
+      if (projectId) {
+        setFormData(prev => ({ ...prev, project_id: projectId }))
       }
     }
-  }, [isOpen, folderId])
+  }, [isOpen, projectId])
 
-  const loadFolders = async () => {
+  const loadProjects = async () => {
     try {
-      const foldersData = await CredentialFoldersService.getAll()
-      setFolders(foldersData)
+      const projectsData = await ProjectsService.getAll()
+      setProjects(projectsData)
     } catch (error) {
-      console.error('Error loading folders:', error)
-      toast.error('Failed to load folders')
+      console.error('Error loading projects:', error)
+      toast.error('Failed to load projects')
     }
   }
 
@@ -79,12 +77,8 @@ export const AddSecretForm: React.FC<AddSecretFormProps> = ({
       newErrors.password = 'Password is required'
     }
 
-    if (!formData.master_password.trim()) {
-      newErrors.master_password = 'Master password is required'
-    }
-
-    if (!formData.folder_id) {
-      newErrors.folder_id = 'Folder is required'
+    if (!formData.project_id) {
+      newErrors.project_id = 'Project is required'
     }
 
     if (formData.url && !isValidUrl(formData.url)) {
@@ -143,9 +137,9 @@ export const AddSecretForm: React.FC<AddSecretFormProps> = ({
         name: formData.name.trim(),
         value: formData.password,
         description: formData.description.trim() || undefined,
-        folder_id: formData.folder_id || undefined,
+        project_id: formData.project_id || undefined,
         tags: formData.tags.length > 0 ? formData.tags : undefined
-      }, formData.master_password)
+      })
 
       toast.success('Secret created successfully')
       handleClose()
@@ -215,27 +209,27 @@ export const AddSecretForm: React.FC<AddSecretFormProps> = ({
             />
           </div>
 
-          {/* Folder */}
+          {/* Project */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Folder *
+              Project *
             </label>
             <select
-              value={formData.folder_id}
-              onChange={(e) => handleInputChange('folder_id', e.target.value)}
+              value={formData.project_id}
+              onChange={(e) => handleInputChange('project_id', e.target.value)}
               className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                errors.folder_id ? 'border-red-500' : 'border-gray-300'
+                errors.project_id ? 'border-red-500' : 'border-gray-300'
               }`}
             >
-              <option value="">Select a folder</option>
-              {folders.map(folder => (
-                <option key={folder.id} value={folder.id}>
-                  {folder.name}
+              <option value="">Select a project</option>
+              {projects.map(project => (
+                <option key={project.id} value={project.id}>
+                  {project.name}
                 </option>
               ))}
             </select>
-            {errors.folder_id && (
-              <p className="mt-1 text-sm text-red-600">{errors.folder_id}</p>
+            {errors.project_id && (
+              <p className="mt-1 text-sm text-red-600">{errors.project_id}</p>
             )}
           </div>
 
@@ -281,24 +275,7 @@ export const AddSecretForm: React.FC<AddSecretFormProps> = ({
             )}
           </div>
 
-          {/* Master Password */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Master Password *
-            </label>
-            <input
-              type="password"
-              value={formData.master_password}
-              onChange={(e) => handleInputChange('master_password', e.target.value)}
-              className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                errors.master_password ? 'border-red-500' : 'border-gray-300'
-              }`}
-              placeholder="Enter master password"
-            />
-            {errors.master_password && (
-              <p className="mt-1 text-sm text-red-600">{errors.master_password}</p>
-            )}
-          </div>
+
 
           {/* URL */}
           <div>

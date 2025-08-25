@@ -145,7 +145,7 @@ const AuthCallback: React.FC = () => {
               </div>
               <div className="flex items-center justify-center space-x-2">
                 <div className="w-2 h-2 bg-blue-600 rounded-full animate-pulse" style={{ animationDelay: '0.4s' }}></div>
-                <span>Creating default folders</span>
+                <span>Creating default projects</span>
               </div>
             </div>
           </>

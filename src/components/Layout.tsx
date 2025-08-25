@@ -5,7 +5,7 @@ import {
   ShieldCheckIcon,
   KeyIcon,
   CogIcon,
-  FolderIcon,
+  RectangleStackIcon,
   UserCircleIcon,
   ArrowRightOnRectangleIcon,
   Bars3Icon,
@@ -29,7 +29,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     { name: 'Secrets', href: '/secrets', icon: ShieldCheckIcon },
     { name: 'API Keys', href: '/credentials/api-keys', icon: KeyIcon },
     { name: 'Environment Variables', href: '/credentials/env-vars', icon: CogIcon },
-    { name: 'Folders', href: '/credentials/folders', icon: FolderIcon },
+    { name: 'Projects', href: '/projects', icon: RectangleStackIcon },
   ]
 
   const handleSignOut = async () => {

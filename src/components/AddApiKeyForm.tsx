@@ -2,62 +2,39 @@ import React, { useState, useEffect } from 'react'
 import { X, Eye, EyeOff, Plus, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { ApiKeysService } from '../services/apiKeys'
-import { CredentialFoldersService } from '../services/credentialFolders'
-import type { CredentialFolder } from '../types/database'
+import { ProjectsService } from '../services/projects'
+import type { Project } from '../types/database'
 
 interface AddApiKeyFormProps {
   isOpen: boolean
   onClose: () => void
   onSuccess: () => void
-  folderId?: string
+  projectId?: string
 }
 
 interface ApiKeyFormData {
   name: string
   description: string
   key_value: string
-  provider: string
   environment: string
   permissions: string[]
   expires_at: string
   tags: string[]
-  folder_id: string
-  master_password: string
+  project_id: string
 }
 
 const initialFormData: ApiKeyFormData = {
   name: '',
   description: '',
   key_value: '',
-  provider: '',
   environment: 'production',
   permissions: [],
   expires_at: '',
   tags: [],
-  folder_id: '',
-  master_password: ''
+  project_id: ''
 }
 
-const commonProviders = [
-  'OpenAI',
-  'Anthropic',
-  'Google Cloud',
-  'AWS',
-  'Azure',
-  'Stripe',
-  'GitHub',
-  'GitLab',
-  'Vercel',
-  'Netlify',
-  'Firebase',
-  'Supabase',
-  'MongoDB',
-  'Redis',
-  'Twilio',
-  'SendGrid',
-  'Mailgun',
-  'Other'
-]
+
 
 const environments = [
   'development',
@@ -70,12 +47,12 @@ export const AddApiKeyForm: React.FC<AddApiKeyFormProps> = ({
   isOpen,
   onClose,
   onSuccess,
-  folderId
+  projectId
 }) => {
   const [formData, setFormData] = useState<ApiKeyFormData>(initialFormData)
-  const [folders, setFolders] = useState<CredentialFolder[]>([])
+  const [projects, setProjects] = useState<Project[]>([])
   const [showKey, setShowKey] = useState(false)
-  const [showMasterPassword, setShowMasterPassword] = useState(false)
+
   const [isLoading, setIsLoading] = useState(false)
   const [tagInput, setTagInput] = useState('')
   const [permissionInput, setPermissionInput] = useState('')
@@ -83,20 +60,20 @@ export const AddApiKeyForm: React.FC<AddApiKeyFormProps> = ({
 
   useEffect(() => {
     if (isOpen) {
-      loadFolders()
-      if (folderId) {
-        setFormData(prev => ({ ...prev, folder_id: folderId }))
+      loadProjects()
+      if (projectId) {
+        setFormData(prev => ({ ...prev, project_id: projectId }))
       }
     }
-  }, [isOpen, folderId])
+  }, [isOpen, projectId])
 
-  const loadFolders = async () => {
+  const loadProjects = async () => {
     try {
-      const foldersData = await CredentialFoldersService.getAll()
-      setFolders(foldersData)
+      const projectsData = await ProjectsService.getAll()
+      setProjects(projectsData)
     } catch (error) {
-      console.error('Error loading folders:', error)
-      toast.error('Failed to load folders')
+      console.error('Error loading projects:', error)
+      toast.error('Failed to load projects')
     }
   }
 
@@ -111,16 +88,8 @@ export const AddApiKeyForm: React.FC<AddApiKeyFormProps> = ({
       newErrors.key_value = 'API key value is required'
     }
 
-    if (!formData.provider.trim()) {
-      newErrors.provider = 'Provider is required'
-    }
-
-    if (!formData.folder_id) {
-      newErrors.folder_id = 'Folder is required'
-    }
-
-    if (!formData.master_password.trim()) {
-      newErrors.master_password = 'Master password is required for encryption'
+    if (!formData.project_id) {
+      newErrors.project_id = 'Project is required'
     }
 
     if (formData.expires_at && new Date(formData.expires_at) <= new Date()) {
@@ -188,10 +157,10 @@ export const AddApiKeyForm: React.FC<AddApiKeyFormProps> = ({
         name: formData.name.trim(),
         description: formData.description.trim() || null,
         key: formData.key_value.trim(),
-        service: formData.provider.trim(),
+        service: null,
         expires_at: formData.expires_at || null,
-        folder_id: formData.folder_id
-      }, formData.master_password.trim())
+        project_id: formData.project_id
+      })
 
       toast.success('API key created successfully')
       handleClose()
@@ -210,7 +179,7 @@ export const AddApiKeyForm: React.FC<AddApiKeyFormProps> = ({
     setTagInput('')
     setPermissionInput('')
     setShowKey(false)
-    setShowMasterPassword(false)
+
     onClose()
   }
 
@@ -263,51 +232,27 @@ export const AddApiKeyForm: React.FC<AddApiKeyFormProps> = ({
             />
           </div>
 
-          {/* Folder */}
+          {/* Project */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Folder *
+              Project *
             </label>
             <select
-              value={formData.folder_id}
-              onChange={(e) => handleInputChange('folder_id', e.target.value)}
+              value={formData.project_id}
+              onChange={(e) => handleInputChange('project_id', e.target.value)}
               className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                errors.folder_id ? 'border-red-500' : 'border-gray-300'
+                errors.project_id ? 'border-red-500' : 'border-gray-300'
               }`}
             >
-              <option value="">Select a folder</option>
-              {folders.map(folder => (
-                <option key={folder.id} value={folder.id}>
-                  {folder.name}
+              <option value="">Select a project</option>
+              {projects.map(project => (
+                <option key={project.id} value={project.id}>
+                  {project.name}
                 </option>
               ))}
             </select>
-            {errors.folder_id && (
-              <p className="mt-1 text-sm text-red-600">{errors.folder_id}</p>
-            )}
-          </div>
-
-          {/* Provider */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Provider *
-            </label>
-            <select
-              value={formData.provider}
-              onChange={(e) => handleInputChange('provider', e.target.value)}
-              className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                errors.provider ? 'border-red-500' : 'border-gray-300'
-              }`}
-            >
-              <option value="">Select a provider</option>
-              {commonProviders.map(provider => (
-                <option key={provider} value={provider}>
-                  {provider}
-                </option>
-              ))}
-            </select>
-            {errors.provider && (
-              <p className="mt-1 text-sm text-red-600">{errors.provider}</p>
+            {errors.project_id && (
+              <p className="mt-1 text-sm text-red-600">{errors.project_id}</p>
             )}
           </div>
 
@@ -357,36 +302,7 @@ export const AddApiKeyForm: React.FC<AddApiKeyFormProps> = ({
             )}
           </div>
 
-          {/* Master Password */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Master Password *
-            </label>
-            <div className="relative">
-              <input
-                type={showMasterPassword ? 'text' : 'password'}
-                value={formData.master_password}
-                onChange={(e) => handleInputChange('master_password', e.target.value)}
-                className={`w-full px-3 py-2 pr-10 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
-                  errors.master_password ? 'border-red-500' : 'border-gray-300'
-                }`}
-                placeholder="Enter master password for encryption"
-              />
-              <button
-                type="button"
-                onClick={() => setShowMasterPassword(!showMasterPassword)}
-                className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
-              >
-                {showMasterPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
-            </div>
-            {errors.master_password && (
-              <p className="mt-1 text-sm text-red-600">{errors.master_password}</p>
-            )}
-            <p className="mt-1 text-xs text-gray-500">
-              This password will be used to encrypt your API key for secure storage
-            </p>
-          </div>
+
 
           {/* Expiration Date */}
           <div>

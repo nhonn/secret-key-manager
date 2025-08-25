@@ -3,6 +3,7 @@ import { Plus, Search, Eye, EyeOff, Copy, Edit, Trash2, Settings, Download, Uplo
 import { toast } from 'sonner'
 import { EnvironmentVariablesService, DecryptedEnvironmentVariable } from '../services/environmentVariables'
 import { AddEnvironmentVariableForm } from '../components/AddEnvironmentVariableForm'
+import { EditEnvironmentVariableForm } from '../components/EditEnvironmentVariableForm'
 import type { Database } from '../types/database'
 
 type EnvironmentVariable = Database['public']['Tables']['environment_variables']['Row']
@@ -21,10 +22,8 @@ export default function EnvironmentVariables({}: EnvironmentVariablesPageProps) 
   const [showFilters, setShowFilters] = useState(false)
   const [visibleVars, setVisibleVars] = useState<Set<string>>(new Set())
   const [showCreateModal, setShowCreateModal] = useState(false)
+  const [showEditModal, setShowEditModal] = useState(false)
   const [editingVar, setEditingVar] = useState<DecryptedEnvVar | null>(null)
-  const [masterPassword, setMasterPassword] = useState('')
-  const [showPasswordPrompt, setShowPasswordPrompt] = useState(false)
-  const [varToDecrypt, setVarToDecrypt] = useState<DecryptedEnvVar | null>(null)
 
   // Load environment variables
   useEffect(() => {
@@ -50,7 +49,7 @@ export default function EnvironmentVariables({}: EnvironmentVariablesPageProps) 
   // Filter environment variables
   const filteredEnvVars = envVars.filter(envVar => {
     const matchesSearch = !searchQuery || 
-      envVar.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      envVar.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       envVar.description?.toLowerCase().includes(searchQuery.toLowerCase())
     
     const matchesEnvironment = !selectedEnvironment || envVar.environment === selectedEnvironment
@@ -71,37 +70,25 @@ export default function EnvironmentVariables({}: EnvironmentVariablesPageProps) 
         envVar.id === varId ? { ...envVar, decrypted_value: undefined } : envVar
       ))
     } else {
-      // Show password prompt to decrypt and show the variable
-      const varToDecrypt = envVars.find(v => v.id === varId)
-      if (varToDecrypt) {
-        setVarToDecrypt(varToDecrypt)
-        setShowPasswordPrompt(true)
+      // Directly decrypt and show the variable
+      try {
+        const decryptedEnvVar = await EnvironmentVariablesService.getById(varId)
+        
+        // Update the variable in state with decrypted value
+        setEnvVars(prev => prev.map(envVar => 
+          envVar.id === varId ? { ...envVar, decrypted_value: decryptedEnvVar.decrypted_value } : envVar
+        ))
+        
+        // Mark as visible
+        setVisibleVars(prev => new Set([...prev, varId]))
+      } catch (error) {
+        console.error('Error decrypting environment variable:', error)
+        toast.error('Failed to decrypt environment variable')
       }
     }
   }
 
-  const decryptAndShowVar = async (password: string) => {
-    if (!varToDecrypt) return
 
-    try {
-      const decryptedEnvVar = await EnvironmentVariablesService.getById(varToDecrypt.id, password)
-      
-      // Update the variable in state with decrypted value
-      setEnvVars(prev => prev.map(envVar => 
-        envVar.id === varToDecrypt.id ? { ...envVar, decrypted_value: decryptedEnvVar.decrypted_value } : envVar
-      ))
-      
-      // Mark as visible
-      setVisibleVars(prev => new Set([...prev, varToDecrypt.id]))
-      
-      setShowPasswordPrompt(false)
-      setVarToDecrypt(null)
-      setMasterPassword('')
-    } catch (error) {
-      console.error('Error decrypting environment variable:', error)
-      toast.error('Failed to decrypt environment variable. Please check your password.')
-    }
-  }
 
   const copyToClipboard = async (text: string, label: string) => {
     try {
@@ -128,19 +115,14 @@ export default function EnvironmentVariables({}: EnvironmentVariablesPageProps) 
   }
 
   const exportEnvFile = async (environment: string) => {
-    if (!masterPassword) {
-      toast.error('Please enter your master password first')
-      return
-    }
-
     try {
       const envVarsForEnvironment = envVars.filter(v => v.environment === environment)
       
       const envFileContent = await Promise.all(
         envVarsForEnvironment.map(async (envVar) => {
           try {
-            const decryptedEnvVar = await EnvironmentVariablesService.getById(envVar.id, masterPassword)
-            return `${envVar.name}=${decryptedEnvVar.decrypted_value}`
+            const decryptedEnvVar = await EnvironmentVariablesService.getById(envVar.id)
+            return `${envVar.name}=${decryptedEnvVar.value}`
           } catch (error) {
             console.warn(`Failed to decrypt ${envVar.name}:`, error)
             return `# ${envVar.name}=<FAILED_TO_DECRYPT>`
@@ -173,7 +155,7 @@ export default function EnvironmentVariables({}: EnvironmentVariablesPageProps) 
   }
 
   const getEnvironmentColor = (environment: string) => {
-    switch (environment.toLowerCase()) {
+    switch (environment?.toLowerCase()) {
       case 'production': return 'bg-red-100 text-red-800'
       case 'staging': return 'bg-yellow-100 text-yellow-800'
       case 'development': return 'bg-green-100 text-green-800'
@@ -213,13 +195,6 @@ export default function EnvironmentVariables({}: EnvironmentVariablesPageProps) 
           <div className="flex items-center gap-3">
             {environments.length > 0 && (
               <div className="flex items-center gap-2">
-                <input
-                  type="password"
-                  placeholder="Master password for export"
-                  value={masterPassword}
-                  onChange={(e) => setMasterPassword(e.target.value)}
-                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
                 <select
                   onChange={(e) => e.target.value && exportEnvFile(e.target.value)}
                   className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -393,8 +368,7 @@ export default function EnvironmentVariables({}: EnvironmentVariablesPageProps) 
                     <button
                       onClick={() => {
                         setEditingVar(envVar)
-                        // TODO: Open edit modal
-                        toast.info('Edit functionality coming soon')
+                        setShowEditModal(true)
                       }}
                       className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
                     >
@@ -414,49 +388,7 @@ export default function EnvironmentVariables({}: EnvironmentVariablesPageProps) 
         </div>
       </div>
 
-      {/* Password Prompt Modal */}
-      {showPasswordPrompt && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md">
-            <h2 className="text-xl font-semibold mb-4">Enter Master Password</h2>
-            <p className="text-gray-600 mb-4">
-              Please enter your master password to decrypt and view the environment variable.
-            </p>
-            <form onSubmit={(e) => {
-              e.preventDefault()
-              decryptAndShowVar(masterPassword)
-            }}>
-              <input
-                type="password"
-                value={masterPassword}
-                onChange={(e) => setMasterPassword(e.target.value)}
-                placeholder="Master password"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent mb-4"
-                autoFocus
-              />
-              <div className="flex justify-end gap-3">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowPasswordPrompt(false)
-                    setVarToDecrypt(null)
-                    setMasterPassword('')
-                  }}
-                  className="px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
-                >
-                  Decrypt
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+
 
       {/* Add Environment Variable Modal */}
       <AddEnvironmentVariableForm
@@ -466,6 +398,24 @@ export default function EnvironmentVariables({}: EnvironmentVariablesPageProps) 
           setShowCreateModal(false)
           loadEnvironmentVariables()
         }}
+      />
+
+      {/* Edit Environment Variable Modal */}
+      <EditEnvironmentVariableForm
+        isOpen={showEditModal}
+        onClose={() => {
+          setShowEditModal(false)
+          setEditingVar(null)
+        }}
+        onSuccess={() => {
+          loadEnvironmentVariables()
+          setShowEditModal(false)
+          setEditingVar(null)
+        }}
+        environmentVariable={editingVar ? {
+           ...editingVar,
+           value: editingVar.decrypted_value || ''
+         } : null}
       />
     </div>
   )

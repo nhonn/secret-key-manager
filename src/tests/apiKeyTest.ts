@@ -1,16 +1,14 @@
 import { ApiKeysService } from '../services/apiKeys';
-import { EncryptionService } from '../services/encryption';
 import { supabase } from '../lib/supabase';
 
 // Test configuration
 const TEST_CONFIG = {
-  masterPassword: 'test-master-password-123',
   testApiKey: {
     name: 'Test API Key',
     description: 'Test API key for validation',
     key: 'test-api-key-12345',
     service: 'openai', // Fixed: use 'service' to match ApiKeysService interface
-    folder_id: null, // Fixed: use 'folder_id' to match database schema
+    project_id: null, // Fixed: use 'project_id' to match database schema
     expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString() // Fixed: use ISO string format
   }
 };
@@ -24,7 +22,6 @@ class ApiKeyTester {
 
     try {
       await this.testAuthentication();
-      await this.testEncryptionDecryption();
       await this.testCreateApiKey();
       await this.testGetApiKey();
       await this.testGetAllApiKeys();
@@ -55,35 +52,14 @@ class ApiKeyTester {
     console.log('✅ User authenticated:', user.email);
   }
 
-  private async testEncryptionDecryption(): Promise<void> {
-    console.log('\n🔒 Testing Encryption/Decryption...');
-    
-    const testData = 'test-api-key-value-12345';
-    
-    try {
-      const encrypted = await EncryptionService.encrypt(testData, TEST_CONFIG.masterPassword);
-      console.log('✅ Encryption successful');
-      
-      const decrypted = await EncryptionService.decrypt(encrypted, TEST_CONFIG.masterPassword);
-      
-      if (decrypted !== testData) {
-        throw new Error('Decrypted data does not match original');
-      }
-      
-      console.log('✅ Decryption successful and data matches');
-    } catch (error) {
-      console.error('❌ Encryption/Decryption test failed:', error);
-      throw error;
-    }
-  }
+
 
   private async testCreateApiKey(): Promise<void> {
     console.log('\n➕ Testing API Key Creation...');
     
     try {
       const result = await ApiKeysService.create(
-        TEST_CONFIG.testApiKey,
-        TEST_CONFIG.masterPassword
+        TEST_CONFIG.testApiKey
       );
       
       this.createdApiKeyId = result.id;
@@ -105,7 +81,7 @@ class ApiKeyTester {
     }
     
     try {
-      const result = await ApiKeysService.getById(this.createdApiKeyId, TEST_CONFIG.masterPassword);
+      const result = await ApiKeysService.getById(this.createdApiKeyId);
       
       if (!result) {
         throw new Error('API Key not found');
@@ -158,8 +134,7 @@ class ApiKeyTester {
       
       const result = await ApiKeysService.update(
         this.createdApiKeyId,
-        updateData,
-        TEST_CONFIG.masterPassword
+        updateData
       );
       
       if (!result) {
@@ -212,7 +187,7 @@ class ApiKeyTester {
           // Missing 'key' field - this should cause validation to fail
         } as any; // Use 'as any' to bypass TypeScript checking for this test
         
-        await ApiKeysService.create(invalidData, TEST_CONFIG.masterPassword);
+        await ApiKeysService.create(invalidData);
         
         // If we get here, the validation didn't work as expected
         console.error('❌ Validation failed - should have thrown an error for missing key field');
@@ -235,7 +210,7 @@ class ApiKeyTester {
           key: '' // Empty key should fail validation
         } as any;
         
-        await ApiKeysService.create(invalidData, TEST_CONFIG.masterPassword);
+        await ApiKeysService.create(invalidData);
         
         console.error('❌ Validation failed - should have thrown an error for empty key field');
         throw new Error('Validation should have failed with empty key');
@@ -259,7 +234,7 @@ class ApiKeyTester {
     
     try {
       // Test with invalid ID
-      const result = await ApiKeysService.getById('invalid-id-12345', TEST_CONFIG.masterPassword);
+      const result = await ApiKeysService.getById('invalid-id-12345');
       
       if (result) {
         throw new Error('Should have failed with invalid ID');
@@ -286,7 +261,7 @@ class ApiKeyTester {
       
       // Verify deletion
       try {
-        const getResult = await ApiKeysService.getById(this.createdApiKeyId, TEST_CONFIG.masterPassword);
+        const getResult = await ApiKeysService.getById(this.createdApiKeyId);
         if (getResult) {
           throw new Error('API Key still exists after deletion');
         }

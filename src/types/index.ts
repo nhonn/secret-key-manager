@@ -41,19 +41,20 @@ export interface UpdateSecretData {
   expires_at?: string
 }
 
-// Credential folder types
-export interface CredentialFolder {
+// Project types
+export interface Project {
   id: string
   user_id: string
   name: string
   description?: string
   parent_id?: string
+  color?: string
   created_at: string
   updated_at: string
-  children?: CredentialFolder[]
+  children?: Project[]
 }
 
-export interface CreateFolderData {
+export interface CreateProjectData {
   name: string
   description?: string
   parent_id?: string
@@ -63,7 +64,7 @@ export interface CreateFolderData {
 export interface ApiKey {
   id: string
   user_id: string
-  folder_id?: string
+  project_id?: string
   name: string
   encrypted_key: string
   service?: string
@@ -77,7 +78,7 @@ export interface ApiKey {
 export interface CreateApiKeyData {
   name: string
   key: string
-  folder_id?: string
+  project_id?: string
   service?: string
   description?: string
   expires_at?: string
@@ -86,7 +87,7 @@ export interface CreateApiKeyData {
 export interface UpdateApiKeyData {
   name?: string
   key?: string
-  folder_id?: string
+  project_id?: string
   service?: string
   description?: string
   expires_at?: string
@@ -96,7 +97,7 @@ export interface UpdateApiKeyData {
 export interface EnvironmentVariable {
   id: string
   user_id: string
-  folder_id?: string
+  project_id?: string
   name: string
   encrypted_value: string
   environment?: string
@@ -108,7 +109,7 @@ export interface EnvironmentVariable {
 export interface CreateEnvVarData {
   name: string
   value: string
-  folder_id?: string
+  project_id?: string
   environment?: string
   description?: string
 }
@@ -116,7 +117,7 @@ export interface CreateEnvVarData {
 export interface UpdateEnvVarData {
   name?: string
   value?: string
-  folder_id?: string
+  project_id?: string
   environment?: string
   description?: string
 }
@@ -150,7 +151,7 @@ export interface DashboardStats {
   totalSecrets: number
   totalApiKeys: number
   totalEnvVars: number
-  totalFolders: number
+  totalProjects: number
   recentActivity: AccessLog[]
 }
 

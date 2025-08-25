@@ -24,14 +24,12 @@ export default function Settings({}: SettingsPageProps) {
   const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
-  const [masterPassword, setMasterPassword] = useState('')
-  const [newMasterPassword, setNewMasterPassword] = useState('')
-  const [confirmMasterPassword, setConfirmMasterPassword] = useState('')
+
   
   // Statistics
   const [stats, setStats] = useState({
     totalSecrets: 0,
-    totalFolders: 0,
+    totalProjects: 0,
     totalApiKeys: 0,
     totalEnvVars: 0,
     lastLogin: null as string | null
@@ -49,16 +47,16 @@ export default function Settings({}: SettingsPageProps) {
     if (!user) return
 
     try {
-      const [secretsResult, foldersResult, apiKeysResult, envVarsResult] = await Promise.all([
+      const [secretsResult, projectsResult, apiKeysResult, envVarsResult] = await Promise.all([
         supabase.from('secrets').select('id', { count: 'exact' }).eq('user_id', user.id),
-        supabase.from('credential_folders').select('id', { count: 'exact' }).eq('user_id', user.id),
+        supabase.from('projects').select('id', { count: 'exact' }).eq('user_id', user.id),
         supabase.from('api_keys').select('id', { count: 'exact' }).eq('user_id', user.id),
         supabase.from('environment_variables').select('id', { count: 'exact' }).eq('user_id', user.id)
       ])
 
       setStats({
         totalSecrets: secretsResult.count || 0,
-        totalFolders: foldersResult.count || 0,
+        totalProjects: projectsResult.count || 0,
         totalApiKeys: apiKeysResult.count || 0,
         totalEnvVars: envVarsResult.count || 0,
         lastLogin: user.last_sign_in_at
@@ -132,46 +130,9 @@ export default function Settings({}: SettingsPageProps) {
     }
   }
 
-  const changeMasterPassword = async () => {
-    if (!masterPassword || !newMasterPassword || !confirmMasterPassword) {
-      toast.error('Please fill in all master password fields')
-      return
-    }
 
-    if (newMasterPassword !== confirmMasterPassword) {
-      toast.error('New master passwords do not match')
-      return
-    }
-
-    if (newMasterPassword.length < 12) {
-      toast.error('Master password must be at least 12 characters long')
-      return
-    }
-
-    try {
-      setLoading(true)
-      
-      // This would require re-encrypting all user data with the new master password
-      // For now, we'll show a placeholder message
-      toast.info('Master password change functionality will be implemented in a future update')
-      
-      setMasterPassword('')
-      setNewMasterPassword('')
-      setConfirmMasterPassword('')
-    } catch (error: any) {
-      console.error('Error changing master password:', error)
-      toast.error(error.message || 'Failed to change master password')
-    } finally {
-      setLoading(false)
-    }
-  }
 
   const exportAllData = async () => {
-    if (!masterPassword) {
-      toast.error('Please enter your master password to export data')
-      return
-    }
-
     try {
       setLoading(true)
       
@@ -244,8 +205,8 @@ export default function Settings({}: SettingsPageProps) {
             <div className="text-sm text-gray-600">Total Secrets</div>
           </div>
           <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-            <div className="text-2xl font-bold text-green-600">{stats.totalFolders}</div>
-            <div className="text-sm text-gray-600">Folders</div>
+            <div className="text-2xl font-bold text-green-600">{stats.totalProjects}</div>
+            <div className="text-sm text-gray-600">Projects</div>
           </div>
           <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
             <div className="text-2xl font-bold text-purple-600">{stats.totalApiKeys}</div>
@@ -427,61 +388,7 @@ export default function Settings({}: SettingsPageProps) {
                   </div>
                 </div>
 
-                {/* Change Master Password */}
-                <div className="border-t border-gray-200 pt-8">
-                  <h2 className="text-lg font-semibold text-gray-900 mb-2">Change Master Password</h2>
-                  <p className="text-sm text-gray-600 mb-4">
-                    Your master password is used to encrypt all your secrets. Changing it will require re-encrypting all your data.
-                  </p>
-                  <div className="space-y-4 max-w-md">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Current Master Password
-                      </label>
-                      <input
-                        type="password"
-                        value={masterPassword}
-                        onChange={(e) => setMasterPassword(e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        placeholder="Enter current master password"
-                      />
-                    </div>
-                    
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        New Master Password
-                      </label>
-                      <input
-                        type="password"
-                        value={newMasterPassword}
-                        onChange={(e) => setNewMasterPassword(e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        placeholder="Enter new master password (min 12 characters)"
-                      />
-                    </div>
-                    
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Confirm New Master Password
-                      </label>
-                      <input
-                        type="password"
-                        value={confirmMasterPassword}
-                        onChange={(e) => setConfirmMasterPassword(e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        placeholder="Confirm new master password"
-                      />
-                    </div>
-                    
-                    <button
-                      onClick={changeMasterPassword}
-                      disabled={loading || !masterPassword || !newMasterPassword || !confirmMasterPassword}
-                      className="bg-orange-600 hover:bg-orange-700 disabled:bg-orange-400 text-white px-4 py-2 rounded-lg transition-colors"
-                    >
-                      {loading ? 'Changing...' : 'Change Master Password'}
-                    </button>
-                  </div>
-                </div>
+
               </div>
             )}
 
@@ -492,19 +399,12 @@ export default function Settings({}: SettingsPageProps) {
                 <div>
                   <h2 className="text-lg font-semibold text-gray-900 mb-2">Export Data</h2>
                   <p className="text-sm text-gray-600 mb-4">
-                    Export all your encrypted data as a backup. You'll need your master password to decrypt the exported data.
+                    Export all your encrypted data as a backup.
                   </p>
                   <div className="flex items-center gap-4">
-                    <input
-                      type="password"
-                      value={masterPassword}
-                      onChange={(e) => setMasterPassword(e.target.value)}
-                      placeholder="Master password"
-                      className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    />
                     <button
                       onClick={exportAllData}
-                      disabled={loading || !masterPassword}
+                      disabled={loading}
                       className="bg-green-600 hover:bg-green-700 disabled:bg-green-400 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
                     >
                       <Download className="w-4 h-4" />

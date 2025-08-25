@@ -1,7 +1,10 @@
 /**
  * Client-side encryption service using Web Crypto API
  * Implements AES-256-GCM encryption for secure data storage
+ * Uses user-based encryption keys derived from OAuth session
  */
+
+import { AuthService } from './auth'
 
 export interface EncryptedData {
   data: string // Base64 encoded encrypted data
@@ -82,9 +85,9 @@ export class EncryptionService {
   }
 
   /**
-   * Encrypts plaintext data using AES-256-GCM
+   * Encrypts plaintext data using AES-256-GCM with user-based key
    */
-  static async encrypt(plaintext: string, password: string): Promise<EncryptedData> {
+  static async encrypt(plaintext: string): Promise<EncryptedData> {
     try {
       const encoder = new TextEncoder()
       const data = encoder.encode(plaintext)
@@ -93,8 +96,9 @@ export class EncryptionService {
       const salt = this.generateRandomBytes(this.SALT_LENGTH)
       const iv = this.generateRandomBytes(this.IV_LENGTH)
 
-      // Derive encryption key
-      const key = await this.deriveKey(password, salt)
+      // Get user-based encryption key
+      const userKey = await this.getUserEncryptionKey()
+      const key = await this.deriveKey(userKey, salt)
 
       // Encrypt the data
       const encryptedBuffer = await crypto.subtle.encrypt(
@@ -118,17 +122,18 @@ export class EncryptionService {
   }
 
   /**
-   * Decrypts encrypted data using AES-256-GCM
+   * Decrypts encrypted data using AES-256-GCM with user-based key
    */
-  static async decrypt(encryptedData: EncryptedData, password: string): Promise<string> {
+  static async decrypt(encryptedData: EncryptedData): Promise<string> {
     try {
       // Convert Base64 strings back to Uint8Arrays
       const data = this.base64ToArrayBuffer(encryptedData.data)
       const iv = this.base64ToArrayBuffer(encryptedData.iv)
       const salt = this.base64ToArrayBuffer(encryptedData.salt)
 
-      // Derive decryption key
-      const key = await this.deriveKey(password, salt)
+      // Get user-based encryption key
+      const userKey = await this.getUserEncryptionKey()
+      const key = await this.deriveKey(userKey, salt)
 
       // Decrypt the data
       const decryptedBuffer = await crypto.subtle.decrypt(
@@ -196,5 +201,97 @@ export class EncryptionService {
     const data = encoder.encode(password)
     const hashBuffer = await crypto.subtle.digest('SHA-256', data)
     return this.arrayBufferToBase64(hashBuffer)
+  }
+
+  /**
+   * Gets user-specific encryption key derived from OAuth session
+   */
+  private static async getUserEncryptionKey(): Promise<string> {
+    const user = await AuthService.getCurrentUser()
+    
+    if (!user) {
+      throw new Error('User not authenticated - cannot generate encryption key')
+    }
+
+    // Use user ID and email to create a consistent encryption key
+    // This ensures the same key is generated for the same user across sessions
+    const keyMaterial = `${user.id}:${user.email}:${user.created_at || ''}`
+    
+    // Hash the key material to create a consistent encryption key
+    const encoder = new TextEncoder()
+    const data = encoder.encode(keyMaterial)
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data)
+    
+    return this.arrayBufferToBase64(hashBuffer)
+  }
+
+  /**
+   * Legacy encrypt method for backward compatibility (deprecated)
+   * @deprecated Use encrypt() without password parameter instead
+   */
+  static async encryptWithPassword(plaintext: string, password: string): Promise<EncryptedData> {
+    try {
+      const encoder = new TextEncoder()
+      const data = encoder.encode(plaintext)
+
+      // Generate random salt and IV
+      const salt = this.generateRandomBytes(this.SALT_LENGTH)
+      const iv = this.generateRandomBytes(this.IV_LENGTH)
+
+      // Derive encryption key
+      const key = await this.deriveKey(password, salt)
+
+      // Encrypt the data
+      const encryptedBuffer = await crypto.subtle.encrypt(
+        {
+          name: this.ALGORITHM,
+          iv: iv
+        },
+        key,
+        data
+      )
+
+      return {
+        data: this.arrayBufferToBase64(encryptedBuffer),
+        iv: this.arrayBufferToBase64(iv),
+        salt: this.arrayBufferToBase64(salt)
+      }
+    } catch (error) {
+      console.error('Encryption failed:', error)
+      throw new Error('Failed to encrypt data')
+    }
+  }
+
+  /**
+   * Legacy decrypt method for backward compatibility (deprecated)
+   * @deprecated Use decrypt() without password parameter instead
+   */
+  static async decryptWithPassword(encryptedData: EncryptedData, password: string): Promise<string> {
+    try {
+      // Convert Base64 strings back to Uint8Arrays
+      const data = this.base64ToArrayBuffer(encryptedData.data)
+      const iv = this.base64ToArrayBuffer(encryptedData.iv)
+      const salt = this.base64ToArrayBuffer(encryptedData.salt)
+
+      // Derive decryption key
+      const key = await this.deriveKey(password, salt)
+
+      // Decrypt the data
+      const decryptedBuffer = await crypto.subtle.decrypt(
+        {
+          name: this.ALGORITHM,
+          iv: iv
+        },
+        key,
+        data
+      )
+
+      // Convert back to string
+      const decoder = new TextDecoder()
+      return decoder.decode(decryptedBuffer)
+    } catch (error) {
+      console.error('Decryption failed:', error)
+      throw new Error('Failed to decrypt data - invalid password or corrupted data')
+    }
   }
 }
