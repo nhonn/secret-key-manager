@@ -338,6 +338,42 @@ const ProjectDetails: React.FC<ProjectDetailsProps> = ({ projectId: propProjectI
     }
   }, [user])
 
+  const copyAllEnvironmentVariables = useCallback(async () => {
+     try {
+       const envVars = groupedItems.envVar
+       if (envVars.length === 0) {
+         toast.error('No environment variables to copy')
+         return
+       }
+ 
+       // Format environment variables in standard .env format
+       const envContent = envVars
+         .map(item => {
+           // Get the decrypted value from decryptedItems or use the original value
+           const decryptedItem = decryptedItems.find(d => d.id === item.id)
+           const value = decryptedItem?.value || item.value
+           
+           // Handle multi-line values by wrapping in quotes
+           const formattedValue = value.includes('\n') ? `"${value.replace(/"/g, '\\"')}"` : value
+           
+           // Add comment with description if available
+           const comment = item.description ? `# ${item.description}\n` : ''
+           
+           return `${comment}${item.name}=${formattedValue}`
+         })
+         .join('\n\n')
+ 
+       await navigator.clipboard.writeText(envContent)
+       toast.success(`Copied ${envVars.length} environment variables to clipboard`)
+       
+       // Log copy action for audit
+       console.log(`User ${user?.email} copied all environment variables for project ${projectId}`)
+     } catch (error) {
+       console.error('Failed to copy environment variables:', error)
+       toast.error('Failed to copy environment variables to clipboard')
+     }
+   }, [groupedItems.envVar, decryptedItems, user, projectId])
+
   // Toggle section expansion
   const toggleSection = useCallback((section: ItemType) => {
     setExpandedSections(prev => {
@@ -608,25 +644,38 @@ const ProjectDetails: React.FC<ProjectDetailsProps> = ({ projectId: propProjectI
                 <div key={type} className="bg-white rounded-lg shadow-sm border border-gray-200 mb-6">
                   {/* Section Header */}
                   <div className="px-6 py-4 border-b border-gray-200">
-                    <button
-                      onClick={() => toggleSection(type)}
-                      className="flex items-center justify-between w-full text-left"
-                    >
-                      <div className="flex items-center">
-                        {getTypeIcon(type)}
-                        <h3 className="ml-3 text-lg font-medium text-gray-900">
-                          {getTypeLabel(type)}
-                        </h3>
-                        <span className="ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-                          {items.length}
-                        </span>
-                      </div>
-                      {isExpanded ? (
-                        <ChevronDownIcon className="h-5 w-5 text-gray-400" />
-                      ) : (
-                        <ChevronRightIcon className="h-5 w-5 text-gray-400" />
+                    <div className="flex items-center justify-between">
+                      <button
+                        onClick={() => toggleSection(type)}
+                        className="flex items-center text-left"
+                      >
+                        <div className="flex items-center">
+                          {getTypeIcon(type)}
+                          <h3 className="ml-3 text-lg font-medium text-gray-900">
+                            {getTypeLabel(type)}
+                          </h3>
+                          <span className="ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                            {items.length}
+                          </span>
+                        </div>
+                        {isExpanded ? (
+                          <ChevronDownIcon className="h-5 w-5 text-gray-400 ml-2" />
+                        ) : (
+                          <ChevronRightIcon className="h-5 w-5 text-gray-400 ml-2" />
+                        )}
+                      </button>
+                      
+                      {/* Copy All Environment Variables Button */}
+                      {type === 'envVar' && items.length > 0 && (
+                        <button
+                          onClick={copyAllEnvironmentVariables}
+                          className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                        >
+                          <ClipboardDocumentIcon className="h-4 w-4 mr-2" />
+                          Copy All Environment Variables
+                        </button>
                       )}
-                    </button>
+                    </div>
                   </div>
                   
                   {/* Section Content */}
