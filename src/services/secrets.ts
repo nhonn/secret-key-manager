@@ -1,6 +1,8 @@
 import { supabase } from '../lib/supabase'
 import { EncryptionService, EncryptedData } from './encryption'
 import { AuditLogService } from './auditLog'
+import { queryCache, CacheKeys, CacheInvalidation } from '../lib/cache'
+import { withPerformanceMonitoring, performanceMonitor } from '../lib/performance'
 import type { Database } from '../types/database'
 
 type Secret = Database['public']['Tables']['secrets']['Row']
@@ -18,6 +20,9 @@ export interface CreateSecretData {
   description?: string
   project_id?: string
   tags?: string[]
+  expires_at?: string
+  url?: string
+  username?: string
 }
 
 export interface UpdateSecretData {
@@ -26,6 +31,9 @@ export interface UpdateSecretData {
   description?: string
   project_id?: string
   tags?: string[]
+  expires_at?: string
+  url?: string
+  username?: string
 }
 
 export class SecretsService {
@@ -52,7 +60,10 @@ export class SecretsService {
         encryption_iv: encryptedData.iv,
         encryption_salt: encryptedData.salt,
         project_id: secretData.project_id || null,
-        tags: secretData.tags || null
+        tags: secretData.tags || null,
+        expires_at: secretData.expires_at || null,
+        url: secretData.url || null,
+        username: secretData.username || null
       }
 
       const { data, error } = await supabase
@@ -82,6 +93,9 @@ export class SecretsService {
       } catch (auditError) {
         console.error('Failed to log audit event:', auditError)
       }
+
+      // Invalidate related caches
+      CacheInvalidation.invalidateSecrets(data.user_id, data.project_id)
 
       return data
     } catch (error) {
@@ -176,18 +190,61 @@ export class SecretsService {
         throw new Error('User not authenticated')
       }
 
-      const { data, error } = await supabase
-        .from('secrets')
-        .select('*')
-        .eq('user_id', user.user.id)
-        .order('created_at', { ascending: false })
-
-      if (error) {
-        console.error('Error fetching secrets:', error)
-        throw new Error(`Failed to fetch secrets: ${error.message}`)
+      const userId = user.user.id
+      const cacheKey = CacheKeys.userSecrets(userId)
+      
+      // Try cache first
+      const cached = queryCache.get<Secret[]>(cacheKey)
+      if (cached) {
+        // Record cache hit
+        performanceMonitor.recordQuery({
+          queryName: 'getSecrets',
+          duration: 0,
+          userId: user.user.id,
+          cacheHit: true,
+          resultCount: cached.length
+        })
+        return cached
       }
 
-      return data || []
+      // Fetch with performance monitoring
+      const result = await withPerformanceMonitoring(
+        'getSecrets',
+        async () => {
+          const { data, error } = await supabase
+            .from('secrets')
+            .select(`
+              id,
+              user_id,
+              name,
+              description,
+              encrypted_value,
+              encryption_iv,
+              encryption_salt,
+              project_id,
+              tags,
+              created_at,
+              updated_at,
+              expires_at,
+              access_count,
+              url,
+              username
+            `)
+            .eq('user_id', user.user.id)
+            .order('created_at', { ascending: false })
+
+          if (error) {
+            console.error('Error fetching secrets:', error)
+            throw new Error(`Failed to fetch secrets: ${error.message}`)
+          }
+
+          return data || []
+        },
+        { trackParameters: false, trackResultCount: true }
+      )()
+
+      queryCache.set(cacheKey, result, 5 * 60 * 1000) // Cache for 5 minutes
+      return result
     } catch (error) {
       console.error('Get secrets error:', error)
       throw error
@@ -207,6 +264,9 @@ export class SecretsService {
         description: updateData.description,
         project_id: updateData.project_id,
         tags: updateData.tags,
+        expires_at: updateData.expires_at,
+        url: updateData.url,
+        username: updateData.username,
         updated_at: new Date().toISOString()
       }
 
@@ -265,6 +325,9 @@ export class SecretsService {
         console.error('Failed to log audit event:', auditError)
       }
 
+      // Invalidate related caches
+      CacheInvalidation.invalidateSecrets(data.user_id, data.project_id)
+
       return data
     } catch (error) {
       console.error('Update secret error:', error)
@@ -277,22 +340,28 @@ export class SecretsService {
    */
   static async deleteSecret(id: string): Promise<void> {
     try {
-      // Get secret data for audit log before deletion
+      const { data: user } = await supabase.auth.getUser()
+      if (!user.user) throw new Error('User not authenticated')
+
+      // Get the secret to delete for audit logging
       const { data: secretToDelete } = await supabase
         .from('secrets')
-        .select('name, description, project_id, tags')
+        .select('*')
         .eq('id', id)
+        .eq('user_id', user.user.id)
         .single()
+
+      if (!secretToDelete) {
+        throw new Error('Secret not found or access denied')
+      }
 
       const { error } = await supabase
         .from('secrets')
         .delete()
         .eq('id', id)
+        .eq('user_id', user.user.id)
 
-      if (error) {
-        console.error('Error deleting secret:', error)
-        throw new Error(`Failed to delete secret: ${error.message}`)
-      }
+      if (error) throw error
 
       // Log audit event
       try {
@@ -301,17 +370,16 @@ export class SecretsService {
           id,
           'DELETE',
           {
-            old_values: secretToDelete ? {
-              name: secretToDelete.name,
-              description: secretToDelete.description,
-              project_id: secretToDelete.project_id,
-              tags: secretToDelete.tags
-            } : null
+            secret_name: secretToDelete.name,
+            project_id: secretToDelete.project_id
           }
         )
       } catch (auditError) {
         console.error('Failed to log audit event:', auditError)
       }
+
+      // Invalidate related caches
+      CacheInvalidation.invalidateSecrets(user.user.id, secretToDelete.project_id)
     } catch (error) {
       console.error('Delete secret error:', error)
       throw error
@@ -330,7 +398,23 @@ export class SecretsService {
 
       const { data, error } = await supabase
         .from('secrets')
-        .select('*')
+        .select(`
+          id,
+          user_id,
+          name,
+          description,
+          encrypted_value,
+          encryption_iv,
+          encryption_salt,
+          project_id,
+          tags,
+          created_at,
+          updated_at,
+          expires_at,
+          access_count,
+          url,
+          username
+        `)
         .eq('user_id', user.user.id)
         .or(`name.ilike.%${query}%,description.ilike.%${query}%`)
         .order('created_at', { ascending: false })
@@ -359,7 +443,23 @@ export class SecretsService {
 
       const { data, error } = await supabase
         .from('secrets')
-        .select('*')
+        .select(`
+          id,
+          user_id,
+          name,
+          description,
+          encrypted_value,
+          encryption_iv,
+          encryption_salt,
+          project_id,
+          tags,
+          created_at,
+          updated_at,
+          expires_at,
+          access_count,
+          url,
+          username
+        `)
         .eq('user_id', user.user.id)
         .eq('project_id', projectId)
         .order('created_at', { ascending: false })
@@ -388,7 +488,23 @@ export class SecretsService {
 
       const { data, error } = await supabase
         .from('secrets')
-        .select('*')
+        .select(`
+          id,
+          user_id,
+          name,
+          description,
+          encrypted_value,
+          encryption_iv,
+          encryption_salt,
+          project_id,
+          tags,
+          created_at,
+          updated_at,
+          expires_at,
+          access_count,
+          url,
+          username
+        `)
         .eq('user_id', user.user.id)
         .overlaps('tags', tags)
         .order('created_at', { ascending: false })

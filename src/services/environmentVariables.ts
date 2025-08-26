@@ -1,6 +1,7 @@
 import { supabase } from '../lib/supabase';
 import { EncryptionService, EncryptedData } from './encryption';
 import { AuditLogService } from './auditLog';
+import { queryCache, CacheKeys, CacheInvalidation } from '../lib/cache';
 import type { Database } from '../types/database';
 
 type EnvironmentVariable = Database['public']['Tables']['environment_variables']['Row'];
@@ -104,6 +105,9 @@ export class EnvironmentVariablesService {
       console.error('Failed to log audit event:', auditError)
     }
 
+    // Invalidate related caches
+    CacheInvalidation.invalidateEnvVars(user.id, envVar.project_id);
+
     return envVar;
   }
 
@@ -163,9 +167,29 @@ export class EnvironmentVariablesService {
       throw new Error('User not authenticated');
     }
 
+    const userId = user.id;
+    const cacheKey = CacheKeys.userEnvVars(userId);
+    
+    // Try cache first
+    const cached = queryCache.get<EnvironmentVariable[]>(cacheKey);
+    if (cached) return cached;
+
     const { data: envVars, error } = await supabase
       .from('environment_variables')
-      .select('*')
+      .select(`
+        id,
+        name,
+        encrypted_value,
+        environment,
+        description,
+        tags,
+        project_id,
+        created_at,
+        updated_at,
+        encryption_iv,
+        encryption_salt,
+        user_id
+      `)
       .eq('user_id', user.id)
       .order('created_at', { ascending: false });
 
@@ -174,7 +198,9 @@ export class EnvironmentVariablesService {
       throw new Error(`Failed to fetch environment variables: ${error.message}`);
     }
 
-    return envVars || [];
+    const result = envVars || [];
+    queryCache.set(cacheKey, result, 5 * 60 * 1000); // Cache for 5 minutes
+    return result;
   }
 
   /**
@@ -188,7 +214,20 @@ export class EnvironmentVariablesService {
 
     const { data: envVars, error } = await supabase
       .from('environment_variables')
-      .select('*')
+      .select(`
+        id,
+        name,
+        encrypted_value,
+        environment,
+        description,
+        tags,
+        project_id,
+        created_at,
+        updated_at,
+        encryption_iv,
+        encryption_salt,
+        user_id
+      `)
       .eq('user_id', user.id)
       .eq('project_id', projectId)
       .order('created_at', { ascending: false });
@@ -303,6 +342,9 @@ export class EnvironmentVariablesService {
       console.error('Failed to log audit event:', auditError)
     }
 
+    // Invalidate related caches
+    CacheInvalidation.invalidateEnvVars(user.id, updatedEnvVar.project_id);
+
     return updatedEnvVar;
   }
 
@@ -350,6 +392,11 @@ export class EnvironmentVariablesService {
       )
     } catch (auditError) {
       console.error('Failed to log audit event:', auditError)
+    }
+
+    // Invalidate related caches
+    if (envVarToDelete) {
+      CacheInvalidation.invalidateEnvVars(user.id, envVarToDelete.project_id);
     }
   }
 

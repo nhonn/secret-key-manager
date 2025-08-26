@@ -13,9 +13,8 @@ import { RefreshCw, AlertCircle } from 'lucide-react'
 import { useAuthStore } from '../store/authStore'
 import { useAppStore } from '../store/appStore'
 import { dashboardEvents } from '../store/appStore'
-import { ApiKeysService } from '../services/apiKeys'
-import { EnvironmentVariablesService } from '../services/environmentVariables'
-import { SecretsService } from '../services/secrets'
+import { DashboardService } from '../services/dashboard'
+import { queryCache } from '../lib/cache'
 import { toast } from 'sonner'
 import type { DashboardStats } from '../types'
 
@@ -44,7 +43,7 @@ const Dashboard: React.FC = () => {
   const DEBOUNCE_DELAY = 1000 // 1 second
   const MIN_FETCH_INTERVAL = 5000 // 5 seconds minimum between fetches
 
-  // Fetch real-time data from services
+  // Fetch real-time data using optimized dashboard service
   const fetchDashboardData = useCallback(async (showToast = false, force = false) => {
     const now = Date.now()
     
@@ -59,34 +58,21 @@ const Dashboard: React.FC = () => {
       setError(null)
       lastFetchTimeRef.current = now
       
-      // Fetch data from all services concurrently
-      const [secretsData, apiKeysData, envVarsData] = await Promise.all([
-        SecretsService.getSecrets().catch(err => {
-          console.error('Error fetching secrets:', err)
-          return []
-        }),
-        ApiKeysService.getAll().catch(err => {
-          console.error('Error fetching API keys:', err)
-          return []
-        }),
-        EnvironmentVariablesService.getAll().catch(err => {
-          console.error('Error fetching environment variables:', err)
-          return []
-        })
-      ])
+      // Use optimized dashboard service for single API call
+      const dashboardData = await DashboardService.getDashboardData()
 
       // Update store with fresh data
-      setSecrets(secretsData)
-      setApiKeys(apiKeysData)
-      setEnvVars(envVarsData)
+      setSecrets(dashboardData.secrets)
+      setApiKeys(dashboardData.apiKeys)
+      setEnvVars(dashboardData.environmentVariables)
 
-      // Calculate and update dashboard statistics
+      // Update dashboard statistics
       const stats: DashboardStats = {
-        totalSecrets: secretsData.length,
-        totalApiKeys: apiKeysData.length,
-        totalEnvVars: envVarsData.length,
-        totalProjects: projects.length,
-        recentActivity: [] // Would be fetched from access_logs table
+        totalSecrets: dashboardData.stats.totalSecrets,
+        totalApiKeys: dashboardData.stats.totalApiKeys,
+        totalEnvVars: dashboardData.stats.totalEnvironmentVariables,
+        totalProjects: dashboardData.stats.totalProjects,
+        recentActivity: [] // Could be enhanced with actual recent activity data
       }
       setDashboardStats(stats)
       setLastRefresh(new Date())
@@ -138,11 +124,41 @@ const Dashboard: React.FC = () => {
     }
   }, [fetchDashboardData])
 
-  // Manual refresh handler
-  const handleManualRefresh = () => {
-    // Force refresh bypasses rate limiting
-    fetchDashboardData(true, true)
-  }
+  // Manual refresh handler with cache invalidation
+   const handleManualRefresh = useCallback(async () => {
+     try {
+       setIsRefreshing(true)
+       setError(null)
+       
+       // Force refresh by bypassing cache
+       const data = await DashboardService.refreshDashboardData()
+       
+       // Update store with fresh data
+       setSecrets(data.secrets)
+       setApiKeys(data.apiKeys)
+       setEnvVars(data.environmentVariables)
+ 
+       // Update dashboard statistics
+       const stats: DashboardStats = {
+         totalSecrets: data.stats.totalSecrets,
+         totalApiKeys: data.stats.totalApiKeys,
+         totalEnvVars: data.stats.totalEnvironmentVariables,
+         totalProjects: data.stats.totalProjects,
+         recentActivity: []
+       }
+       setDashboardStats(stats)
+       setLastRefresh(new Date())
+       
+       toast.success('Dashboard refreshed successfully')
+     } catch (err) {
+       console.error('Failed to refresh dashboard data:', err)
+       const errorMessage = err instanceof Error ? err.message : 'Failed to refresh dashboard data'
+       setError(errorMessage)
+       toast.error('Failed to refresh dashboard')
+     } finally {
+       setIsRefreshing(false)
+     }
+   }, [setSecrets, setApiKeys, setEnvVars, setDashboardStats])
   
   // Cleanup debounce timeout on unmount
   useEffect(() => {

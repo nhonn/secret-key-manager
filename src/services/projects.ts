@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase'
+import { queryCache, CacheKeys, CacheInvalidation } from '../lib/cache'
 import type { Database } from '../types/database'
 
 type Project = Database['public']['Tables']['projects']['Row']
@@ -83,6 +84,9 @@ export class ProjectsService {
         throw new Error(`Failed to create project: ${error.message}`)
       }
 
+      // Invalidate related caches
+      CacheInvalidation.invalidateUser(user.user.id)
+
       return data
     } catch (error) {
       console.error('Create project error:', error)
@@ -107,9 +111,16 @@ export class ProjectsService {
         throw new Error('User not authenticated')
       }
 
+      const userId = user.user.id
+      const cacheKey = CacheKeys.userProjects(userId)
+      
+      // Try cache first
+      const cached = queryCache.get<Project[]>(cacheKey)
+      if (cached) return cached
+
       const { data, error } = await supabase
         .from('projects')
-        .select('*')
+        .select('id, name, description, color, user_id, parent_id, created_at, updated_at')
         .eq('user_id', user.user.id)
         .order('created_at', { ascending: false })
 
@@ -118,7 +129,9 @@ export class ProjectsService {
         throw new Error(`Failed to fetch projects: ${error.message}`)
       }
 
-      return data || []
+      const result = data || []
+      queryCache.set(cacheKey, result, 10 * 60 * 1000) // Cache for 10 minutes (projects change less frequently)
+      return result
     } catch (error) {
       console.error('Get projects error:', error)
       throw error
@@ -143,7 +156,7 @@ export class ProjectsService {
 
       const { data, error } = await supabase
         .from('projects')
-        .select('*')
+        .select('id, name, description, color, user_id, parent_id, created_at, updated_at')
         .eq('id', id)
         .eq('user_id', user.user.id) // Ensure user can only access their own projects
         .single()
@@ -255,6 +268,11 @@ export class ProjectsService {
         throw new Error(`Failed to update project: ${error.message}`)
       }
 
+      // Invalidate related caches
+      if (data) {
+        CacheInvalidation.invalidateUser(data.user_id)
+      }
+
       return data
     } catch (error) {
       console.error('Update project error:', error)
@@ -346,6 +364,9 @@ export class ProjectsService {
         console.error('Error deleting project:', error)
         throw new Error(`Failed to delete project: ${error.message}`)
       }
+
+      // Invalidate related caches
+      CacheInvalidation.invalidateUser(existingProject.user_id)
     } catch (error) {
       console.error('Delete project error:', error)
       throw error
@@ -424,7 +445,7 @@ export class ProjectsService {
 
       const { data, error } = await supabase
         .from('projects')
-        .select('*')
+        .select('id, name, description, color, user_id, parent_id, created_at, updated_at')
         .eq('user_id', user.user.id)
         .or(`name.ilike.%${sanitizedQuery}%,description.ilike.%${sanitizedQuery}%`)
         .order('created_at', { ascending: false })

@@ -1,6 +1,8 @@
 import { supabase } from '../lib/supabase';
 import { EncryptionService, EncryptedData } from './encryption';
 import { AuditLogService } from './auditLog';
+import { queryCache, CacheKeys, CacheInvalidation } from '../lib/cache';
+import { withPerformanceMonitoring, performanceMonitor } from '../lib/performance';
 import type { Database } from '../types/database';
 
 type ApiKey = Database['public']['Tables']['api_keys']['Row'];
@@ -89,6 +91,9 @@ export class ApiKeysService {
       throw new Error(`Failed to create API key: ${error.message}`);
     }
 
+    // Invalidate related caches
+    CacheInvalidation.invalidateApiKeys(user.id, apiKey.project_id);
+
     // Log audit event
     try {
       await AuditLogService.logAction(
@@ -173,18 +178,61 @@ export class ApiKeysService {
       throw new Error('User not authenticated');
     }
 
-    const { data: apiKeys, error } = await supabase
-      .from('api_keys')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false });
-
-    if (error) {
-      console.error('Error fetching API keys:', error);
-      throw new Error(`Failed to fetch API keys: ${error.message}`);
+    const userId = user.id;
+    const cacheKey = CacheKeys.userApiKeys(userId);
+    
+    // Try cache first
+    const cached = queryCache.get<ApiKey[]>(cacheKey);
+    if (cached) {
+      // Record cache hit
+      performanceMonitor.recordQuery({
+        queryName: 'getApiKeys',
+        duration: 0,
+        userId: user.id,
+        cacheHit: true,
+        resultCount: cached.length
+      });
+      return cached;
     }
 
-    return apiKeys || [];
+    // Fetch with performance monitoring
+    const apiKeys = await withPerformanceMonitoring(
+      'getApiKeys',
+      async () => {
+        const { data: apiKeys, error } = await supabase
+          .from('api_keys')
+          .select(`
+            id,
+            name,
+            encrypted_key,
+            service,
+            url,
+            description,
+            tags,
+            project_id,
+            expires_at,
+            access_count,
+            created_at,
+            updated_at,
+            encryption_iv,
+            encryption_salt,
+            user_id
+          `)
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false });
+
+        if (error) {
+          console.error('Error fetching API keys:', error);
+          throw new Error(`Failed to fetch API keys: ${error.message}`);
+        }
+
+        return apiKeys || [];
+      },
+      { trackParameters: false, trackResultCount: true }
+    )();
+
+    queryCache.set(cacheKey, apiKeys, 5 * 60 * 1000); // Cache for 5 minutes
+    return apiKeys;
   }
 
   /**
@@ -198,7 +246,23 @@ export class ApiKeysService {
 
     const { data: apiKeys, error } = await supabase
       .from('api_keys')
-      .select('*')
+      .select(`
+        id,
+        name,
+        service,
+        url,
+        description,
+        tags,
+        project_id,
+        expires_at,
+        access_count,
+        created_at,
+        updated_at,
+        encryption_iv,
+        encryption_salt,
+        encrypted_key,
+        user_id
+      `)
       .eq('user_id', user.id)
       .eq('project_id', projectId)
       .order('created_at', { ascending: false });
@@ -291,6 +355,9 @@ export class ApiKeysService {
       throw new Error(`Failed to update API key: ${error.message}`);
     }
 
+    // Invalidate related caches
+    CacheInvalidation.invalidateApiKeys(user.id, updatedApiKey.project_id);
+
     // Log audit event
     try {
       await AuditLogService.logAction(
@@ -352,6 +419,11 @@ export class ApiKeysService {
       throw new Error(`Failed to delete API key: ${error.message}`);
     }
 
+    // Invalidate related caches
+    if (apiKeyToDelete) {
+      CacheInvalidation.invalidateApiKeys(user.id, apiKeyToDelete.project_id);
+    }
+
     // Log audit event
     try {
       await AuditLogService.logAction(
@@ -408,7 +480,7 @@ export class ApiKeysService {
     try {
       const { data: apiKey, error } = await supabase
         .from('api_keys')
-        .select('encrypted_key, encryption_iv, encryption_salt')
+        .select('encryption_iv, encryption_salt')
         .eq('id', id)
         .eq('user_id', user.id)
         .single();
@@ -422,7 +494,7 @@ export class ApiKeysService {
       }
 
       const encryptedData: EncryptedData = {
-        data: apiKey.encrypted_key,
+        data: '',
         iv: apiKey.encryption_iv,
         salt: apiKey.encryption_salt
       };
@@ -449,9 +521,25 @@ export class ApiKeysService {
 
     const { data: apiKeys, error } = await supabase
       .from('api_keys')
-      .select('*')
+      .select(`
+        id,
+        name,
+        service,
+        url,
+        description,
+        tags,
+        project_id,
+        expires_at,
+        access_count,
+        created_at,
+        updated_at,
+        encryption_iv,
+        encryption_salt,
+        encrypted_key,
+        user_id
+      `)
       .eq('user_id', user.id)
-      .or(`name.ilike.%${query}%,description.ilike.%${query}%,url.ilike.%${query}%,username.ilike.%${query}%`)
+      .or(`name.ilike.%${query}%,description.ilike.%${query}%,url.ilike.%${query}%`)
       .order('created_at', { ascending: false });
 
     if (error) {
