@@ -5,7 +5,9 @@ import {
   KeyIcon,
   PlusIcon,
   RectangleStackIcon,
-  ShieldCheckIcon
+  ShieldCheckIcon,
+  DocumentTextIcon,
+  ServerIcon
 } from '@heroicons/react/24/outline'
 import { AlertCircle, RefreshCw } from 'lucide-react'
 import React, { useCallback, useEffect, useRef, useState } from 'react'
@@ -72,11 +74,22 @@ const Dashboard: React.FC = () => {
       
       // Use optimized dashboard service for single API call
       const dashboardData = await DashboardService.getDashboardData()
+      const dashboardSummary = await DashboardService.getDashboardSummary()
 
       // Update store with fresh data
       setSecrets(dashboardData.secrets)
       setApiKeys(dashboardData.apiKeys)
       setEnvVars(dashboardData.environmentVariables)
+
+      // Convert recent items to AccessLog format for recent activity
+      const recentActivity = dashboardSummary.recentItems.map(item => ({
+        id: `${item.type}_${item.id}`,
+        user_id: user?.id || '',
+        resource_type: item.type === 'secret' ? 'secrets' : item.type === 'api_key' ? 'api_keys' : 'environment_variables',
+        resource_id: item.id,
+        action: 'created',
+        created_at: item.created_at
+      }))
 
       // Update dashboard statistics
       const stats: DashboardStats = {
@@ -84,7 +97,7 @@ const Dashboard: React.FC = () => {
         totalApiKeys: dashboardData.stats.totalApiKeys,
         totalEnvVars: dashboardData.stats.totalEnvironmentVariables,
         totalProjects: dashboardData.stats.totalProjects,
-        recentActivity: [] // Could be enhanced with actual recent activity data
+        recentActivity
       }
       setDashboardStats(stats)
       setLastRefresh(new Date())
@@ -144,11 +157,22 @@ const Dashboard: React.FC = () => {
        
        // Force refresh by bypassing cache
        const data = await DashboardService.refreshDashboardData()
+       const dashboardSummary = await DashboardService.getDashboardSummary()
        
        // Update store with fresh data
        setSecrets(data.secrets)
        setApiKeys(data.apiKeys)
        setEnvVars(data.environmentVariables)
+ 
+       // Convert recent items to AccessLog format for recent activity
+       const recentActivity = dashboardSummary.recentItems.map(item => ({
+         id: `${item.type}_${item.id}`,
+         user_id: user?.id || '',
+         resource_type: item.type === 'secret' ? 'secrets' : item.type === 'api_key' ? 'api_keys' : 'environment_variables',
+         resource_id: item.id,
+         action: 'created',
+         created_at: item.created_at
+       }))
  
        // Update dashboard statistics
        const stats: DashboardStats = {
@@ -156,7 +180,7 @@ const Dashboard: React.FC = () => {
          totalApiKeys: data.stats.totalApiKeys,
          totalEnvVars: data.stats.totalEnvironmentVariables,
          totalProjects: data.stats.totalProjects,
-         recentActivity: []
+         recentActivity
        }
        setDashboardStats(stats)
        setLastRefresh(new Date())
@@ -431,29 +455,76 @@ const Dashboard: React.FC = () => {
               <div className="p-6">
                 {dashboardStats?.recentActivity && dashboardStats.recentActivity.length > 0 ? (
                   <div className="space-y-4">
-                    {dashboardStats.recentActivity.slice(0, 5).map((activity, index) => (
-                      <div key={activity.id || index} className="flex items-center space-x-3">
-                        <div className="w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center">
-                          <EyeIcon className="w-4 h-4 text-gray-600" />
+                    {dashboardStats.recentActivity.slice(0, 5).map((activity, index) => {
+                      // Get activity-specific icon and color
+                      const getActivityIcon = (resourceType: string) => {
+                        switch (resourceType) {
+                          case 'secrets':
+                            return { icon: ShieldCheckIcon, color: 'bg-blue-100 text-blue-600' }
+                          case 'api_keys':
+                            return { icon: KeyIcon, color: 'bg-green-100 text-green-600' }
+                          case 'environment_variables':
+                            return { icon: ServerIcon, color: 'bg-purple-100 text-purple-600' }
+                          default:
+                            return { icon: DocumentTextIcon, color: 'bg-gray-100 text-gray-600' }
+                        }
+                      }
+
+                      // Get human-readable resource name
+                      const getResourceName = (resourceType: string) => {
+                        switch (resourceType) {
+                          case 'secrets':
+                            return 'Secret'
+                          case 'api_keys':
+                            return 'API Key'
+                          case 'environment_variables':
+                            return 'Environment Variable'
+                          default:
+                            return 'Item'
+                        }
+                      }
+
+                      // Format timestamp with relative time
+                      const getRelativeTime = (dateString: string) => {
+                        const date = new Date(dateString)
+                        const now = new Date()
+                        const diffInMinutes = Math.floor((now.getTime() - date.getTime()) / (1000 * 60))
+                        
+                        if (diffInMinutes < 1) return 'Just now'
+                        if (diffInMinutes < 60) return `${diffInMinutes}m ago`
+                        if (diffInMinutes < 1440) return `${Math.floor(diffInMinutes / 60)}h ago`
+                        if (diffInMinutes < 10080) return `${Math.floor(diffInMinutes / 1440)}d ago`
+                        return date.toLocaleDateString()
+                      }
+
+                      const { icon: ActivityIcon, color } = getActivityIcon(activity.resource_type)
+                      const resourceName = getResourceName(activity.resource_type)
+                      const relativeTime = getRelativeTime(activity.created_at)
+
+                      return (
+                        <div key={activity.id || index} className="flex items-center space-x-3">
+                          <div className={`w-8 h-8 rounded-full flex items-center justify-center ${color}`}>
+                            <ActivityIcon className="w-4 h-4" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm text-gray-900 truncate">
+                              Created new {resourceName}
+                            </p>
+                            <p className="text-xs text-gray-500 flex items-center">
+                              <ClockIcon className="w-3 h-3 mr-1" />
+                              {relativeTime}
+                            </p>
+                          </div>
                         </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm text-gray-900 truncate">
-                            {activity.action} {activity.resource_type}
-                          </p>
-                          <p className="text-xs text-gray-500 flex items-center">
-                            <ClockIcon className="w-3 h-3 mr-1" />
-                            {new Date(activity.created_at).toLocaleDateString()}
-                          </p>
-                        </div>
-                      </div>
-                    ))}
+                      )
+                    })}
                   </div>
                 ) : (
                   <div className="text-center py-8">
                     <ClockIcon className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-                    <p className="text-sm text-gray-500">No recent activity</p>
-                    <p className="text-xs text-gray-400 mt-1">
-                      Start by creating your first secret or API key
+                    <h3 className="text-sm font-medium text-gray-900">No recent activity</h3>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Start by creating secrets, API keys, or environment variables to see your activity here
                     </p>
                   </div>
                 )}
