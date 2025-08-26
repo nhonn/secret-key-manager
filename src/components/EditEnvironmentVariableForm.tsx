@@ -280,7 +280,7 @@ export const EditEnvironmentVariableForm: React.FC<EditEnvironmentVariableFormPr
                           errors.value ? 'border-red-300' : 'border-gray-300'
                         } ${!showValue ? 'font-mono' : ''}`}
                         placeholder="Enter variable value"
-                        style={!showValue ? { WebkitTextSecurity: 'disc' } : {}}
+                        style={!showValue ? { WebkitTextSecurity: 'disc' } as React.CSSProperties : {}}
                       />
                       <button
                         type="button"

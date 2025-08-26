@@ -23,7 +23,9 @@ export default function EnvironmentVariables({}: EnvironmentVariablesPageProps) 
   const [visibleVars, setVisibleVars] = useState<Set<string>>(new Set())
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [showEditModal, setShowEditModal] = useState(false)
-  const [editingVar, setEditingVar] = useState<DecryptedEnvVar | null>(null)
+  const [editingVar, setEditingVar] = useState<DecryptedEnvironmentVariable | null>(null)
+  
+
 
   // Load environment variables
   useEffect(() => {
@@ -366,17 +368,28 @@ export default function EnvironmentVariables({}: EnvironmentVariablesPageProps) 
 
                   <div className="flex items-center gap-2 ml-4">
                     <button
-                      onClick={() => {
-                        setEditingVar(envVar)
-                        setShowEditModal(true)
+                      onClick={async () => {
+                        try {
+                          const decryptedValue = await EnvironmentVariablesService.decryptEnvironmentVariable(envVar.id)
+                          setEditingVar({
+                            ...envVar,
+                            value: decryptedValue
+                          } as DecryptedEnvironmentVariable)
+                          setShowEditModal(true)
+                        } catch (error) {
+                          console.error('Error decrypting environment variable for editing:', error)
+                          toast.error('Failed to decrypt environment variable')
+                        }
                       }}
                       className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                      title="Edit Environment Variable"
                     >
                       <Edit className="w-4 h-4" />
                     </button>
                     <button
                       onClick={() => handleDeleteVar(envVar)}
                       className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                      title="Delete Environment Variable"
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
@@ -412,10 +425,7 @@ export default function EnvironmentVariables({}: EnvironmentVariablesPageProps) 
           setShowEditModal(false)
           setEditingVar(null)
         }}
-        environmentVariable={editingVar ? {
-           ...editingVar,
-           value: editingVar.decrypted_value || ''
-         } : null}
+        environmentVariable={editingVar}
       />
     </div>
   )

@@ -6,6 +6,7 @@ import { ProjectsService } from '../services/projects'
 import { AddSecretForm } from '../components/AddSecretForm'
 import { EditSecretForm } from '../components/EditSecretForm'
 import type { Secret, Project } from '../types/database'
+import type { DecryptedSecret } from '../types'
 
 interface SecretsPageProps {}
 
@@ -26,7 +27,9 @@ export default function Secrets({}: SecretsPageProps) {
   const [decryptedSecrets, setDecryptedSecrets] = useState<Map<string, string>>(new Map())
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [showEditModal, setShowEditModal] = useState(false)
-  const [editingSecret, setEditingSecret] = useState<Secret | null>(null)
+  const [editingSecret, setEditingSecret] = useState<DecryptedSecret | null>(null)
+  
+
 
   // Load secrets and projects
   useEffect(() => {
@@ -399,17 +402,29 @@ export default function Secrets({}: SecretsPageProps) {
 
                   <div className="flex items-center gap-2 ml-4">
                     <button
-                      onClick={() => {
-                        setEditingSecret(secret)
-                        setShowEditModal(true)
+                      onClick={async () => {
+                        try {
+                          const decryptedValue = decryptedSecrets.get(secret.id) || await SecretsService.decryptSecret(secret.id)
+                          const decryptedSecret: DecryptedSecret = {
+                            ...secret,
+                            value: decryptedValue
+                          }
+                          setEditingSecret(decryptedSecret)
+                          setShowEditModal(true)
+                        } catch (error) {
+                          console.error('Error decrypting secret:', error)
+                          toast.error('Failed to decrypt secret for editing')
+                        }
                       }}
                       className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                      title="Edit Secret"
                     >
                       <Edit className="w-4 h-4" />
                     </button>
                     <button
                       onClick={() => handleDeleteSecret(secret.id)}
                       className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                      title="Delete Secret"
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>

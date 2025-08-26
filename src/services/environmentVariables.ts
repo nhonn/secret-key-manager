@@ -1,5 +1,6 @@
 import { supabase } from '../lib/supabase';
 import { EncryptionService, EncryptedData } from './encryption';
+import { AuditLogService } from './auditLog';
 import type { Database } from '../types/database';
 
 type EnvironmentVariable = Database['public']['Tables']['environment_variables']['Row'];
@@ -85,6 +86,22 @@ export class EnvironmentVariablesService {
     if (error) {
       console.error('Error creating environment variable:', error);
       throw new Error(`Failed to create environment variable: ${error.message}`);
+    }
+
+    // Log audit event
+    try {
+      await AuditLogService.logAction(
+        'environment_variable',
+        envVar.id,
+        'CREATE',
+        {
+          name: envVar.name,
+          description: envVar.description,
+          project_id: envVar.project_id
+        }
+      )
+    } catch (auditError) {
+      console.error('Failed to log audit event:', auditError)
     }
 
     return envVar;
@@ -241,6 +258,13 @@ export class EnvironmentVariablesService {
       updateData.encryption_salt = encryptedData.salt;
     }
 
+    // Get old values for audit log
+    const { data: oldEnvVar } = await supabase
+      .from('environment_variables')
+      .select('name, description, project_id, tags')
+      .eq('id', id)
+      .single()
+
     const { data: updatedEnvVar, error } = await supabase
       .from('environment_variables')
       .update(updateData)
@@ -252,6 +276,31 @@ export class EnvironmentVariablesService {
     if (error) {
       console.error('Error updating environment variable:', error);
       throw new Error(`Failed to update environment variable: ${error.message}`);
+    }
+
+    // Log audit event
+    try {
+      await AuditLogService.logAction(
+        'environment_variable',
+        id,
+        'UPDATE',
+        {
+          old_values: oldEnvVar ? {
+            name: oldEnvVar.name,
+            description: oldEnvVar.description,
+            project_id: oldEnvVar.project_id,
+            tags: oldEnvVar.tags
+          } : null,
+          new_values: {
+            name: updatedEnvVar.name,
+            description: updatedEnvVar.description,
+            project_id: updatedEnvVar.project_id,
+            tags: updatedEnvVar.tags
+          }
+        }
+      )
+    } catch (auditError) {
+      console.error('Failed to log audit event:', auditError)
     }
 
     return updatedEnvVar;
@@ -266,6 +315,13 @@ export class EnvironmentVariablesService {
       throw new Error('User not authenticated');
     }
 
+    // Get environment variable data for audit log before deletion
+    const { data: envVarToDelete } = await supabase
+      .from('environment_variables')
+      .select('name, description, project_id, tags')
+      .eq('id', id)
+      .single()
+
     const { error } = await supabase
       .from('environment_variables')
       .delete()
@@ -276,6 +332,59 @@ export class EnvironmentVariablesService {
       console.error('Error deleting environment variable:', error);
       throw new Error(`Failed to delete environment variable: ${error.message}`);
     }
+
+    // Log audit event
+    try {
+      await AuditLogService.logAction(
+        'environment_variable',
+        id,
+        'DELETE',
+        {
+          old_values: envVarToDelete ? {
+            name: envVarToDelete.name,
+            description: envVarToDelete.description,
+            project_id: envVarToDelete.project_id,
+            tags: envVarToDelete.tags
+          } : null
+        }
+      )
+    } catch (auditError) {
+      console.error('Failed to log audit event:', auditError)
+    }
+  }
+
+  /**
+   * Decrypt a single environment variable value by ID
+   */
+  static async decryptEnvironmentVariable(id: string): Promise<string> {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      throw new Error('User not authenticated');
+    }
+
+    const { data: envVar, error } = await supabase
+      .from('environment_variables')
+      .select('encrypted_value, encryption_iv, encryption_salt')
+      .eq('id', id)
+      .eq('user_id', user.id)
+      .single();
+
+    if (error) {
+      console.error('Error fetching environment variable for decryption:', error);
+      throw new Error(`Failed to fetch environment variable: ${error.message}`);
+    }
+
+    if (!envVar || !envVar.encrypted_value || !envVar.encryption_iv || !envVar.encryption_salt) {
+      throw new Error('Environment variable not found or missing encryption data');
+    }
+
+    const encryptedData: EncryptedData = {
+      data: envVar.encrypted_value,
+      iv: envVar.encryption_iv,
+      salt: envVar.encryption_salt
+    };
+
+    return await EncryptionService.decrypt(encryptedData);
   }
 
   /**

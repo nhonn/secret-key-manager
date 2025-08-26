@@ -2,6 +2,7 @@ import React, { useEffect } from 'react'
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
 import { Toaster } from 'sonner'
 import { useAuthStore } from './store/authStore'
+
 import { AuthService } from './services/auth'
 import type { AppUser } from './types'
 
@@ -20,9 +21,11 @@ import EnvironmentVariables from './pages/EnvironmentVariables'
 import Projects from './pages/Projects'
 import Settings from './pages/Settings'
 import TestApiKeys from './pages/TestApiKeys'
+import AuditLogs from './pages/AuditLogs'
 
 function App() {
   const { setUser, checkAuth, addToast } = useAuthStore()
+
 
   useEffect(() => {
     // Initialize auth state on app load
@@ -35,6 +38,7 @@ function App() {
             email: session.user.email || session.user.user_metadata?.email || ''
           } as AppUser)
           checkAuth()
+
         }
       } catch (error) {
         console.error('Failed to initialize auth:', error)
@@ -44,9 +48,10 @@ function App() {
     initializeAuth()
 
     // Listen for auth state changes
-    const { data: { subscription } } = AuthService.onAuthStateChange((user) => {
+    const { data: { subscription } } = AuthService.onAuthStateChange(async (user) => {
       if (user) {
         setUser(user)
+
         addToast({
           type: 'success',
           title: 'Welcome!',
@@ -128,6 +133,14 @@ function App() {
           <Route path="/test/api-keys" element={
             <ProtectedRoute>
               <TestApiKeys />
+            </ProtectedRoute>
+          } />
+          
+          <Route path="/audit-logs" element={
+            <ProtectedRoute>
+              <Layout>
+                <AuditLogs />
+              </Layout>
             </ProtectedRoute>
           } />
           

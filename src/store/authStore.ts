@@ -3,6 +3,7 @@ import { persist } from 'zustand/middleware'
 import type { AppUser, Toast } from '../types'
 import { AuthService } from '../services/auth'
 
+
 interface AuthState {
   // User state
   user: AppUser | null
@@ -62,6 +63,9 @@ export const useAuthStore = create<AuthState>()(
             isAuthenticated: false,
             isLoading: false 
           })
+          
+
+          
           get().addToast({
             type: 'success',
             title: 'Signed Out',
@@ -105,6 +109,8 @@ export const useAuthStore = create<AuthState>()(
              isAuthenticated: !!user,
              isLoading: false 
            })
+          
+
         } catch (error) {
           console.error('Auth check error:', error)
           set({ 
@@ -112,6 +118,8 @@ export const useAuthStore = create<AuthState>()(
             isAuthenticated: false,
             isLoading: false 
           })
+          
+
         }
       },
 

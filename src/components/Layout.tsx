@@ -9,7 +9,8 @@ import {
   UserCircleIcon,
   ArrowRightOnRectangleIcon,
   Bars3Icon,
-  XMarkIcon
+  XMarkIcon,
+  DocumentTextIcon
 } from '@heroicons/react/24/outline'
 import { useAuthStore } from '../store/authStore'
 import { AuthService } from '../services/auth'
@@ -30,6 +31,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     { name: 'API Keys', href: '/credentials/api-keys', icon: KeyIcon },
     { name: 'Environment Variables', href: '/credentials/env-vars', icon: CogIcon },
     { name: 'Projects', href: '/projects', icon: RectangleStackIcon },
+    { name: 'Audit Logs', href: '/audit-logs', icon: DocumentTextIcon },
   ]
 
   const handleSignOut = async () => {

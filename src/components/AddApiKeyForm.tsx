@@ -17,7 +17,6 @@ interface ApiKeyFormData {
   description: string
   key_value: string
   environment: string
-  permissions: string[]
   expires_at: string
   tags: string[]
   project_id: string
@@ -28,7 +27,6 @@ const initialFormData: ApiKeyFormData = {
   description: '',
   key_value: '',
   environment: 'production',
-  permissions: [],
   expires_at: '',
   tags: [],
   project_id: ''
@@ -55,7 +53,6 @@ export const AddApiKeyForm: React.FC<AddApiKeyFormProps> = ({
 
   const [isLoading, setIsLoading] = useState(false)
   const [tagInput, setTagInput] = useState('')
-  const [permissionInput, setPermissionInput] = useState('')
   const [errors, setErrors] = useState<Partial<ApiKeyFormData>>({})
 
   useEffect(() => {
@@ -126,23 +123,7 @@ export const AddApiKeyForm: React.FC<AddApiKeyFormProps> = ({
     }))
   }
 
-  const handleAddPermission = () => {
-    const permission = permissionInput.trim()
-    if (permission && !formData.permissions.includes(permission)) {
-      setFormData(prev => ({
-        ...prev,
-        permissions: [...prev.permissions, permission]
-      }))
-      setPermissionInput('')
-    }
-  }
 
-  const handleRemovePermission = (permissionToRemove: string) => {
-    setFormData(prev => ({
-      ...prev,
-      permissions: prev.permissions.filter(permission => permission !== permissionToRemove)
-    }))
-  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -177,7 +158,6 @@ export const AddApiKeyForm: React.FC<AddApiKeyFormProps> = ({
     setFormData(initialFormData)
     setErrors({})
     setTagInput('')
-    setPermissionInput('')
     setShowKey(false)
 
     onClose()
@@ -322,55 +302,7 @@ export const AddApiKeyForm: React.FC<AddApiKeyFormProps> = ({
             )}
           </div>
 
-          {/* Permissions */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Permissions
-            </label>
-            <div className="space-y-2">
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={permissionInput}
-                  onChange={(e) => setPermissionInput(e.target.value)}
-                  onKeyPress={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault()
-                      handleAddPermission()
-                    }
-                  }}
-                  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="Enter permission and press Enter"
-                />
-                <button
-                  type="button"
-                  onClick={handleAddPermission}
-                  className="px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-colors"
-                >
-                  <Plus className="w-4 h-4" />
-                </button>
-              </div>
-              {formData.permissions.length > 0 && (
-                <div className="flex flex-wrap gap-2">
-                  {formData.permissions.map(permission => (
-                    <span
-                      key={permission}
-                      className="inline-flex items-center gap-1 px-2 py-1 bg-green-100 text-green-800 rounded-full text-sm"
-                    >
-                      {permission}
-                      <button
-                        type="button"
-                        onClick={() => handleRemovePermission(permission)}
-                        className="text-green-600 hover:text-green-800"
-                      >
-                        <Trash2 className="w-3 h-3" />
-                      </button>
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
+
 
           {/* Tags */}
           <div>

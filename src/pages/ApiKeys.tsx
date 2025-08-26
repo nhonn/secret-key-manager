@@ -18,7 +18,9 @@ export default function ApiKeys({}: ApiKeysPageProps) {
   const [visibleKeys, setVisibleKeys] = useState<Set<string>>(new Set())
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [showEditModal, setShowEditModal] = useState(false)
-  const [editingKey, setEditingKey] = useState<ApiKey | null>(null)
+  const [editingKey, setEditingKey] = useState<DecryptedApiKey | null>(null)
+  
+
 
 
   // Load API keys
@@ -283,17 +285,29 @@ export default function ApiKeys({}: ApiKeysPageProps) {
 
                     <div className="flex items-center gap-2 ml-4">
                       <button
-                        onClick={() => {
-                          setEditingKey(apiKey)
-                          setShowEditModal(true)
+                        onClick={async () => {
+                          try {
+                            const decryptedKey = apiKey.decrypted_key || await ApiKeysService.decryptApiKey(apiKey.id)
+                            const decryptedApiKey: DecryptedApiKey = {
+                              ...apiKey,
+                              key: decryptedKey
+                            }
+                            setEditingKey(decryptedApiKey)
+                            setShowEditModal(true)
+                          } catch (error) {
+                            console.error('Error decrypting API key:', error)
+                            toast.error('Failed to decrypt API key for editing')
+                          }
                         }}
                         className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                        title="Edit API Key"
                       >
                         <Edit className="w-4 h-4" />
                       </button>
                       <button
                         onClick={() => handleDeleteKey(apiKey)}
                         className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                        title="Delete API Key"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>

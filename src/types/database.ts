@@ -134,6 +134,8 @@ export interface Database {
           name: string
           encrypted_key: string
           service: string | null
+          url: string | null
+          tags: string[] | null
           description: string | null
           expires_at: string | null
           access_count: number | null
@@ -149,6 +151,8 @@ export interface Database {
           name: string
           encrypted_key: string
           service?: string | null
+          url?: string | null
+          tags?: string[] | null
           description?: string | null
           expires_at?: string | null
           access_count?: number | null
@@ -164,6 +168,8 @@ export interface Database {
           name?: string
           encrypted_key?: string
           service?: string | null
+          url?: string | null
+          tags?: string[] | null
           description?: string | null
           expires_at?: string | null
           access_count?: number | null
@@ -197,6 +203,7 @@ export interface Database {
           name: string
           encrypted_value: string
           environment: string | null
+          tags: string[] | null
           description: string | null
           created_at: string | null
           updated_at: string | null
@@ -210,6 +217,7 @@ export interface Database {
           name: string
           encrypted_value: string
           environment?: string | null
+          tags?: string[] | null
           description?: string | null
           created_at?: string | null
           updated_at?: string | null
@@ -223,6 +231,7 @@ export interface Database {
           name?: string
           encrypted_value?: string
           environment?: string | null
+          tags?: string[] | null
           description?: string | null
           created_at?: string | null
           updated_at?: string | null
@@ -287,6 +296,54 @@ export interface Database {
           }
         ]
       }
+
+      audit_logs: {
+        Row: {
+          id: string
+          user_id: string
+          resource_type: string
+          resource_id: string
+          action: string
+          old_values: Json | null
+          new_values: Json | null
+          ip_address: string | null
+          user_agent: string | null
+          created_at: string | null
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          resource_type: string
+          resource_id: string
+          action: string
+          old_values?: Json | null
+          new_values?: Json | null
+          ip_address?: string | null
+          user_agent?: string | null
+          created_at?: string | null
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          resource_type?: string
+          resource_id?: string
+          action?: string
+          old_values?: Json | null
+          new_values?: Json | null
+          ip_address?: string | null
+          user_agent?: string | null
+          created_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "audit_logs_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
     }
     Views: {
       [_ in never]: never
@@ -297,7 +354,8 @@ export interface Database {
             user_uuid: string
           }
           Returns: undefined
-        }
+        },
+
       }
     Enums: {
       [_ in never]: never
@@ -314,3 +372,4 @@ export type ApiKey = Database['public']['Tables']['api_keys']['Row']
 export type EnvironmentVariable = Database['public']['Tables']['environment_variables']['Row']
 export type Project = Database['public']['Tables']['projects']['Row']
 export type AccessLog = Database['public']['Tables']['access_logs']['Row']
+export type AuditLog = Database['public']['Tables']['audit_logs']['Row']

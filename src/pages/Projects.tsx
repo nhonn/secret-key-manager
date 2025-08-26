@@ -19,6 +19,8 @@ export default function Projects({}: ProjectsPageProps) {
   const [searchQuery, setSearchQuery] = useState('')
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [editingProject, setEditingProject] = useState<Project | null>(null)
+  
+
 
   // Load projects and their stats
   useEffect(() => {
@@ -234,12 +236,14 @@ export default function Projects({}: ProjectsPageProps) {
                       <button
                         onClick={() => setEditingProject(project)}
                         className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                        title="Edit Project"
                       >
                         <Edit className="w-4 h-4" />
                       </button>
                       <button
                         onClick={() => handleDeleteProject(project)}
                         className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                        title="Delete Project"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>

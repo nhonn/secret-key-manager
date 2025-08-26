@@ -1,5 +1,6 @@
 import { supabase } from '../lib/supabase'
 import { EncryptionService, EncryptedData } from './encryption'
+import { AuditLogService } from './auditLog'
 import type { Database } from '../types/database'
 
 type Secret = Database['public']['Tables']['secrets']['Row']
@@ -65,6 +66,23 @@ export class SecretsService {
         throw new Error(`Failed to create secret: ${error.message}`)
       }
 
+      // Log audit event
+      try {
+        await AuditLogService.logAction(
+          'secret',
+          data.id,
+          'CREATE',
+          {
+            name: data.name,
+            description: data.description,
+            project_id: data.project_id,
+            tags: data.tags
+          }
+        )
+      } catch (auditError) {
+        console.error('Failed to log audit event:', auditError)
+      }
+
       return data
     } catch (error) {
       console.error('Create secret error:', error)
@@ -111,6 +129,39 @@ export class SecretsService {
       }
     } catch (error) {
       console.error('Get secret error:', error)
+      throw error
+    }
+  }
+
+  /**
+   * Decrypts a secret value by ID (returns only the decrypted value)
+   */
+  static async decryptSecret(id: string): Promise<string> {
+    try {
+      const { data: secret, error } = await supabase
+        .from('secrets')
+        .select('encrypted_value, encryption_iv, encryption_salt')
+        .eq('id', id)
+        .single()
+
+      if (error) {
+        throw new Error(`Failed to fetch secret: ${error.message}`)
+      }
+
+      if (!secret) {
+        throw new Error('Secret not found')
+      }
+
+      // Decrypt the secret value
+      const encryptedData: EncryptedData = {
+        data: secret.encrypted_value,
+        iv: secret.encryption_iv,
+        salt: secret.encryption_salt
+      }
+
+      return await EncryptionService.decrypt(encryptedData)
+    } catch (error) {
+      console.error('Error decrypting secret:', error)
       throw error
     }
   }
@@ -170,6 +221,13 @@ export class SecretsService {
         }
       }
 
+      // Get old values for audit log
+      const { data: oldSecret } = await supabase
+        .from('secrets')
+        .select('name, description, project_id, tags')
+        .eq('id', id)
+        .single()
+
       const { data, error } = await supabase
         .from('secrets')
         .update(secretUpdate)
@@ -180,6 +238,31 @@ export class SecretsService {
       if (error) {
         console.error('Error updating secret:', error)
         throw new Error(`Failed to update secret: ${error.message}`)
+      }
+
+      // Log audit event
+      try {
+        await AuditLogService.logAction(
+          'secret',
+          id,
+          'UPDATE',
+          {
+            old_values: oldSecret ? {
+              name: oldSecret.name,
+              description: oldSecret.description,
+              project_id: oldSecret.project_id,
+              tags: oldSecret.tags
+            } : null,
+            new_values: {
+              name: data.name,
+              description: data.description,
+              project_id: data.project_id,
+              tags: data.tags
+            }
+          }
+        )
+      } catch (auditError) {
+        console.error('Failed to log audit event:', auditError)
       }
 
       return data
@@ -194,6 +277,13 @@ export class SecretsService {
    */
   static async deleteSecret(id: string): Promise<void> {
     try {
+      // Get secret data for audit log before deletion
+      const { data: secretToDelete } = await supabase
+        .from('secrets')
+        .select('name, description, project_id, tags')
+        .eq('id', id)
+        .single()
+
       const { error } = await supabase
         .from('secrets')
         .delete()
@@ -202,6 +292,25 @@ export class SecretsService {
       if (error) {
         console.error('Error deleting secret:', error)
         throw new Error(`Failed to delete secret: ${error.message}`)
+      }
+
+      // Log audit event
+      try {
+        await AuditLogService.logAction(
+          'secret',
+          id,
+          'DELETE',
+          {
+            old_values: secretToDelete ? {
+              name: secretToDelete.name,
+              description: secretToDelete.description,
+              project_id: secretToDelete.project_id,
+              tags: secretToDelete.tags
+            } : null
+          }
+        )
+      } catch (auditError) {
+        console.error('Failed to log audit event:', auditError)
       }
     } catch (error) {
       console.error('Delete secret error:', error)

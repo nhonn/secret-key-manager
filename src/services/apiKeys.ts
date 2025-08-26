@@ -1,5 +1,6 @@
 import { supabase } from '../lib/supabase';
 import { EncryptionService, EncryptedData } from './encryption';
+import { AuditLogService } from './auditLog';
 import type { Database } from '../types/database';
 
 type ApiKey = Database['public']['Tables']['api_keys']['Row'];
@@ -86,6 +87,24 @@ export class ApiKeysService {
         insertData
       });
       throw new Error(`Failed to create API key: ${error.message}`);
+    }
+
+    // Log audit event
+    try {
+      await AuditLogService.logAction(
+        'api_key',
+        apiKey.id,
+        'CREATE',
+        {
+          name: apiKey.name,
+          description: apiKey.description,
+          service: apiKey.service,
+          project_id: apiKey.project_id,
+          expires_at: apiKey.expires_at
+        }
+      )
+    } catch (auditError) {
+      console.error('Failed to log audit event:', auditError)
     }
 
     return apiKey;
@@ -252,6 +271,13 @@ export class ApiKeysService {
       updateData.encryption_salt = encryptedData.salt;
     }
 
+    // Get old values for audit log
+    const { data: oldApiKey } = await supabase
+      .from('api_keys')
+      .select('name, description, service, project_id, expires_at, tags, url')
+      .eq('id', id)
+      .single()
+
     const { data: updatedApiKey, error } = await supabase
       .from('api_keys')
       .update(updateData)
@@ -263,6 +289,37 @@ export class ApiKeysService {
     if (error) {
       console.error('Error updating API key:', error);
       throw new Error(`Failed to update API key: ${error.message}`);
+    }
+
+    // Log audit event
+    try {
+      await AuditLogService.logAction(
+        'api_key',
+        id,
+        'UPDATE',
+        {
+          old_values: oldApiKey ? {
+            name: oldApiKey.name,
+            description: oldApiKey.description,
+            service: oldApiKey.service,
+            project_id: oldApiKey.project_id,
+            expires_at: oldApiKey.expires_at,
+            tags: oldApiKey.tags,
+            url: oldApiKey.url
+          } : null,
+          new_values: {
+            name: updatedApiKey.name,
+            description: updatedApiKey.description,
+            service: updatedApiKey.service,
+            project_id: updatedApiKey.project_id,
+            expires_at: updatedApiKey.expires_at,
+            tags: updatedApiKey.tags,
+            url: updatedApiKey.url
+          }
+        }
+      )
+    } catch (auditError) {
+      console.error('Failed to log audit event:', auditError)
     }
 
     return updatedApiKey;
@@ -277,6 +334,13 @@ export class ApiKeysService {
       throw new Error('User not authenticated');
     }
 
+    // Get API key data for audit log before deletion
+    const { data: apiKeyToDelete } = await supabase
+      .from('api_keys')
+      .select('name, description, service, project_id, expires_at, tags, url')
+      .eq('id', id)
+      .single()
+
     const { error } = await supabase
       .from('api_keys')
       .delete()
@@ -286,6 +350,28 @@ export class ApiKeysService {
     if (error) {
       console.error('Error deleting API key:', error);
       throw new Error(`Failed to delete API key: ${error.message}`);
+    }
+
+    // Log audit event
+    try {
+      await AuditLogService.logAction(
+        'api_key',
+        id,
+        'DELETE',
+        {
+          old_values: apiKeyToDelete ? {
+            name: apiKeyToDelete.name,
+            description: apiKeyToDelete.description,
+            service: apiKeyToDelete.service,
+            project_id: apiKeyToDelete.project_id,
+            expires_at: apiKeyToDelete.expires_at,
+            tags: apiKeyToDelete.tags,
+            url: apiKeyToDelete.url
+          } : null
+        }
+      )
+    } catch (auditError) {
+      console.error('Failed to log audit event:', auditError)
     }
   }
 
@@ -307,6 +393,44 @@ export class ApiKeysService {
     } catch (error) {
       console.error('Error decrypting API key:', error);
       throw new Error('Failed to decrypt API key - authentication required');
+    }
+  }
+
+  /**
+   * Decrypt an API key value by ID
+   */
+  static async decryptApiKey(id: string): Promise<string> {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      throw new Error('User not authenticated');
+    }
+
+    try {
+      const { data: apiKey, error } = await supabase
+        .from('api_keys')
+        .select('encrypted_key, encryption_iv, encryption_salt')
+        .eq('id', id)
+        .eq('user_id', user.id)
+        .single();
+
+      if (error) {
+        throw new Error(`Failed to fetch API key: ${error.message}`);
+      }
+
+      if (!apiKey) {
+        throw new Error('API key not found');
+      }
+
+      const encryptedData: EncryptedData = {
+        data: apiKey.encrypted_key,
+        iv: apiKey.encryption_iv,
+        salt: apiKey.encryption_salt
+      };
+
+      return await EncryptionService.decrypt(encryptedData);
+    } catch (error) {
+      console.error('Error decrypting API key:', error);
+      throw new Error('Failed to decrypt API key');
     }
   }
 

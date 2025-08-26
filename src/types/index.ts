@@ -23,6 +23,27 @@ export interface Secret {
   access_count: number
   created_at: string
   updated_at: string
+  project_id?: string
+  encryption_iv?: string
+  encryption_salt?: string
+  url?: string
+  username?: string
+}
+
+export interface DecryptedSecret {
+  id: string
+  user_id: string
+  name: string
+  value: string
+  description?: string
+  tags?: string[]
+  expires_at?: string
+  access_count: number
+  created_at: string
+  updated_at: string
+  project_id?: string
+  url?: string
+  username?: string
 }
 
 export interface CreateSecretData {
@@ -39,6 +60,9 @@ export interface UpdateSecretData {
   description?: string
   tags?: string[]
   expires_at?: string
+  project_id?: string
+  url?: string
+  username?: string
 }
 
 // Project types
@@ -68,6 +92,26 @@ export interface ApiKey {
   name: string
   encrypted_key: string
   service?: string
+  url?: string
+  tags?: string[]
+  description?: string
+  expires_at?: string
+  access_count: number
+  created_at: string
+  updated_at: string
+  encryption_iv?: string
+  encryption_salt?: string
+}
+
+export interface DecryptedApiKey {
+  id: string
+  user_id: string
+  project_id?: string
+  name: string
+  key: string
+  service?: string
+  url?: string
+  tags?: string[]
   description?: string
   expires_at?: string
   access_count: number
@@ -89,6 +133,8 @@ export interface UpdateApiKeyData {
   key?: string
   project_id?: string
   service?: string
+  url?: string
+  tags?: string[]
   description?: string
   expires_at?: string
 }
@@ -101,6 +147,22 @@ export interface EnvironmentVariable {
   name: string
   encrypted_value: string
   environment?: string
+  tags?: string[]
+  description?: string
+  created_at: string
+  updated_at: string
+  encryption_iv?: string
+  encryption_salt?: string
+}
+
+export interface DecryptedEnvironmentVariable {
+  id: string
+  user_id: string
+  project_id?: string
+  name: string
+  value: string
+  environment?: string
+  tags?: string[]
   description?: string
   created_at: string
   updated_at: string
@@ -119,6 +181,7 @@ export interface UpdateEnvVarData {
   value?: string
   project_id?: string
   environment?: string
+  tags?: string[]
   description?: string
 }
 

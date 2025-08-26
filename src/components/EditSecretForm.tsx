@@ -267,7 +267,6 @@ export const EditSecretForm: React.FC<EditSecretFormProps> = ({
                     <div className="relative">
                       <textarea
                         id="value"
-                        type={showValue ? 'text' : 'password'}
                         value={formData.value}
                         onChange={(e) => handleInputChange('value', e.target.value)}
                         rows={4}
@@ -275,7 +274,7 @@ export const EditSecretForm: React.FC<EditSecretFormProps> = ({
                           errors.value ? 'border-red-300' : 'border-gray-300'
                         } ${!showValue ? 'font-mono' : ''}`}
                         placeholder="Enter secret value"
-                        style={!showValue ? { WebkitTextSecurity: 'disc' } : {}}
+                        style={!showValue ? { WebkitTextSecurity: 'disc' } as React.CSSProperties : {}}
                       />
                       <button
                         type="button"
