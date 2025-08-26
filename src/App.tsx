@@ -19,6 +19,7 @@ import Secrets from './pages/Secrets'
 import ApiKeys from './pages/ApiKeys'
 import EnvironmentVariables from './pages/EnvironmentVariables'
 import Projects from './pages/Projects'
+import ProjectDetails from './pages/ProjectDetails'
 import Settings from './pages/Settings'
 import TestApiKeys from './pages/TestApiKeys'
 import AuditLogs from './pages/AuditLogs'
@@ -121,6 +122,14 @@ function App() {
                 </Layout>
               </ProtectedRoute>
             } />
+          
+          <Route path="/projects/:projectId" element={
+            <ProtectedRoute>
+              <Layout>
+                <ProjectDetails />
+              </Layout>
+            </ProtectedRoute>
+          } />
           
           <Route path="/settings" element={
             <ProtectedRoute>

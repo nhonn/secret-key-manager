@@ -1,18 +1,25 @@
 import React, { useState, useEffect } from 'react'
-import { Plus, Search, Edit, Trash2, Package, Package2, Settings } from 'lucide-react'
+import { Plus, Search, Edit, Trash2, Package, Package2, Settings, Key, Database as DatabaseIcon, ArrowRight } from 'lucide-react'
 import { toast } from 'sonner'
+import { useNavigate } from 'react-router-dom'
 import { ProjectsService, CreateProjectData, UpdateProjectData } from '../services/projects'
+import { useAppStore } from '../store/appStore'
 import type { Database } from '../types/database'
 
 type Project = Database['public']['Tables']['projects']['Row']
 
 interface ProjectStats {
   secretCount: number
+  apiKeyCount: number
+  environmentVariableCount: number
+  totalItems: number
 }
 
 interface ProjectsPageProps {}
 
 export default function Projects({}: ProjectsPageProps) {
+  const navigate = useNavigate()
+  const { setProjects: setGlobalProjects, addProject: addGlobalProject, updateProject: updateGlobalProject, removeProject: removeGlobalProject } = useAppStore()
   const [projects, setProjects] = useState<Project[]>([])
   const [projectStats, setProjectStats] = useState<Record<string, ProjectStats>>({})
   const [loading, setLoading] = useState(true)
@@ -32,6 +39,8 @@ export default function Projects({}: ProjectsPageProps) {
       setLoading(true)
       const projectsData = await ProjectsService.getAll()
       setProjects(projectsData)
+      // Also update the global app store so ProjectDetails can access projects
+      setGlobalProjects(projectsData)
 
       // Load stats for each project
       const stats: Record<string, ProjectStats> = {}
@@ -42,7 +51,7 @@ export default function Projects({}: ProjectsPageProps) {
             stats[project.id] = projectStats
           } catch (error) {
             console.warn(`Failed to load stats for project ${project.id}:`, error)
-            stats[project.id] = { secretCount: 0 }
+            stats[project.id] = { secretCount: 0, apiKeyCount: 0, environmentVariableCount: 0, totalItems: 0 }
           }
         })
       )
@@ -66,10 +75,15 @@ export default function Projects({}: ProjectsPageProps) {
 
   const handleDeleteProject = async (project: Project) => {
     // Check if project has any associated data
-    const secretCount = projectStats[project.id]?.secretCount || 0
+    const stats = projectStats[project.id] || { secretCount: 0, apiKeyCount: 0, environmentVariableCount: 0, totalItems: 0 }
     
-    if (secretCount > 0) {
-      toast.error(`Cannot delete project "${project.name}" because it contains ${secretCount} secret(s). Please move or delete the secrets first.`)
+    if (stats.totalItems > 0) {
+      const itemsList = []
+      if (stats.secretCount > 0) itemsList.push(`${stats.secretCount} secret${stats.secretCount !== 1 ? 's' : ''}`)
+      if (stats.apiKeyCount > 0) itemsList.push(`${stats.apiKeyCount} API key${stats.apiKeyCount !== 1 ? 's' : ''}`)
+      if (stats.environmentVariableCount > 0) itemsList.push(`${stats.environmentVariableCount} environment variable${stats.environmentVariableCount !== 1 ? 's' : ''}`)
+      
+      toast.error(`Cannot delete project "${project.name}" because it contains ${itemsList.join(', ')}. Please move or delete these items first.`)
       return
     }
 
@@ -87,6 +101,8 @@ export default function Projects({}: ProjectsPageProps) {
     try {
       await ProjectsService.delete(project.id)
       setProjects(prev => prev.filter(p => p.id !== project.id))
+      // Also update global store
+      removeGlobalProject(project.id)
       // Also remove from project stats
       setProjectStats(prev => {
         const newStats = { ...prev }
@@ -208,59 +224,101 @@ export default function Projects({}: ProjectsPageProps) {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {filteredProjects.map(project => {
-              const stats = projectStats[project.id] || { secretCount: 0 }
+              const stats = projectStats[project.id] || { secretCount: 0, apiKeyCount: 0, environmentVariableCount: 0, totalItems: 0 }
               return (
-                <div key={project.id} className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow">
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="flex items-center gap-3">
-                      <div
-                        className="w-12 h-12 rounded-lg flex items-center justify-center"
-                        style={{ backgroundColor: project.color }}
-                      >
-                        {stats.secretCount > 0 ? (
-                          <Package2 className="w-6 h-6 text-white" />
-                        ) : (
-                          <Package className="w-6 h-6 text-white" />
-                        )}
+                <div key={project.id} className="bg-white rounded-lg shadow-sm border border-gray-200 hover:shadow-md transition-all duration-200 group">
+                  {/* Clickable main content area */}
+                  <div 
+                    className="p-6 cursor-pointer" 
+                    onClick={() => navigate(`/projects/${project.id}`)}
+                  >
+                    <div className="flex items-start justify-between mb-4">
+                      <div className="flex items-center gap-3">
+                        <div
+                          className="w-12 h-12 rounded-lg flex items-center justify-center"
+                          style={{ backgroundColor: project.color }}
+                        >
+                          {stats.totalItems > 0 ? (
+                            <Package2 className="w-6 h-6 text-white" />
+                          ) : (
+                            <Package className="w-6 h-6 text-white" />
+                          )}
+                        </div>
+                        <div>
+                          <h3 className="text-lg font-semibold text-gray-900 group-hover:text-blue-600 transition-colors">
+                            {project.name}
+                          </h3>
+                          <p className="text-sm text-gray-500">
+                            {stats.totalItems} item{stats.totalItems !== 1 ? 's' : ''} total
+                          </p>
+                        </div>
                       </div>
-                      <div>
-                        <h3 className="text-lg font-semibold text-gray-900">
-                          {project.name}
-                        </h3>
-                        <p className="text-sm text-gray-500">
-                          {stats.secretCount} secret{stats.secretCount !== 1 ? 's' : ''}
-                        </p>
+                      <ArrowRight className="w-5 h-5 text-gray-400 group-hover:text-blue-600 transition-colors" />
+                    </div>
+
+                    {project.description && (
+                      <p className="text-gray-600 text-sm mb-4">
+                        {project.description}
+                      </p>
+                    )}
+
+                    {/* Comprehensive Statistics */}
+                    <div className="space-y-3 mb-4">
+                      <div className="grid grid-cols-3 gap-2">
+                        <div className="flex items-center gap-2 p-2 bg-blue-50 rounded-lg">
+                          <Package className="w-4 h-4 text-blue-600" />
+                          <div>
+                            <p className="text-xs text-blue-600 font-medium">{stats.secretCount}</p>
+                            <p className="text-xs text-blue-500">Secrets</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 p-2 bg-green-50 rounded-lg">
+                          <Key className="w-4 h-4 text-green-600" />
+                          <div>
+                            <p className="text-xs text-green-600 font-medium">{stats.apiKeyCount}</p>
+                            <p className="text-xs text-green-500">API Keys</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 p-2 bg-purple-50 rounded-lg">
+                          <DatabaseIcon className="w-4 h-4 text-purple-600" />
+                          <div>
+                            <p className="text-xs text-purple-600 font-medium">{stats.environmentVariableCount}</p>
+                            <p className="text-xs text-purple-500">Env Vars</p>
+                          </div>
+                        </div>
                       </div>
                     </div>
-                    <div className="flex items-center gap-1">
-                      <button
-                        onClick={() => setEditingProject(project)}
-                        className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                        title="Edit Project"
-                      >
-                        <Edit className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => handleDeleteProject(project)}
-                        className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                        title="Delete Project"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+
+                    <div className="text-xs text-gray-500">
+                      Created {new Date(project.created_at).toLocaleDateString()}
+                      {project.updated_at !== project.created_at && (
+                        <span> • Updated {new Date(project.updated_at).toLocaleDateString()}</span>
+                      )}
                     </div>
                   </div>
 
-                  {project.description && (
-                    <p className="text-gray-600 text-sm mb-4">
-                      {project.description}
-                    </p>
-                  )}
-
-                  <div className="text-xs text-gray-500">
-                    Created {new Date(project.created_at).toLocaleDateString()}
-                    {project.updated_at !== project.created_at && (
-                      <span> • Updated {new Date(project.updated_at).toLocaleDateString()}</span>
-                    )}
+                  {/* Action buttons - separate from clickable area */}
+                  <div className="px-6 pb-4 flex items-center justify-end gap-1 border-t border-gray-100 pt-3">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setEditingProject(project)
+                      }}
+                      className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                      title="Edit Project"
+                    >
+                      <Edit className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handleDeleteProject(project)
+                      }}
+                      className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                      title="Delete Project"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
                   </div>
                 </div>
               )
@@ -285,11 +343,15 @@ export default function Projects({}: ProjectsPageProps) {
                   projectData as UpdateProjectData
                 )
                 setProjects(prev => prev.map(p => p.id === editingProject.id ? updatedProject : p))
+                // Also update global store
+                updateGlobalProject(editingProject.id, updatedProject)
                 toast.success('Project updated successfully')
               } else {
                 const newProject = await ProjectsService.create(projectData as CreateProjectData)
                 setProjects(prev => [newProject, ...prev])
-                setProjectStats(prev => ({ ...prev, [newProject.id]: { secretCount: 0 } }))
+                // Also update global store
+                addGlobalProject(newProject)
+                setProjectStats(prev => ({ ...prev, [newProject.id]: { secretCount: 0, apiKeyCount: 0, environmentVariableCount: 0, totalItems: 0 } }))
                 toast.success('Project created successfully')
               }
               setShowCreateModal(false)

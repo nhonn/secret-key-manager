@@ -294,4 +294,73 @@ export class EncryptionService {
       throw new Error('Failed to decrypt data - invalid password or corrupted data')
     }
   }
+
+  /**
+   * Decrypts a secret and returns the decrypted data
+   */
+  static async decryptSecret(secret: any): Promise<any> {
+    try {
+      const encryptedData: EncryptedData = {
+        data: secret.encrypted_value,
+        iv: secret.encryption_iv || '',
+        salt: secret.encryption_salt || ''
+      }
+      
+      const decryptedValue = await this.decrypt(encryptedData)
+      
+      return {
+        ...secret,
+        value: decryptedValue
+      }
+    } catch (error) {
+      console.error('Failed to decrypt secret:', error)
+      throw new Error('Failed to decrypt secret')
+    }
+  }
+
+  /**
+   * Decrypts an API key and returns the decrypted data
+   */
+  static async decryptApiKey(apiKey: any): Promise<any> {
+    try {
+      const encryptedData: EncryptedData = {
+        data: apiKey.encrypted_key,
+        iv: apiKey.encryption_iv || '',
+        salt: apiKey.encryption_salt || ''
+      }
+      
+      const decryptedKey = await this.decrypt(encryptedData)
+      
+      return {
+        ...apiKey,
+        key: decryptedKey
+      }
+    } catch (error) {
+      console.error('Failed to decrypt API key:', error)
+      throw new Error('Failed to decrypt API key')
+    }
+  }
+
+  /**
+   * Decrypts an environment variable and returns the decrypted data
+   */
+  static async decryptEnvironmentVariable(envVar: any): Promise<any> {
+    try {
+      const encryptedData: EncryptedData = {
+        data: envVar.encrypted_value,
+        iv: envVar.encryption_iv || '',
+        salt: envVar.encryption_salt || ''
+      }
+      
+      const decryptedValue = await this.decrypt(encryptedData)
+      
+      return {
+        ...envVar,
+        value: decryptedValue
+      }
+    } catch (error) {
+      console.error('Failed to decrypt environment variable:', error)
+      throw new Error('Failed to decrypt environment variable')
+    }
+  }
 }

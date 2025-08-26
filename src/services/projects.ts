@@ -376,7 +376,12 @@ export class ProjectsService {
   /**
    * Gets project statistics (number of secrets)
    */
-  static async getProjectStats(id: string): Promise<{ secretCount: number }> {
+  static async getProjectStats(id: string): Promise<{ 
+    secretCount: number
+    apiKeyCount: number
+    environmentVariableCount: number
+    totalItems: number
+  }> {
     try {
       // Validate input
       if (!id || typeof id !== 'string') {
@@ -401,18 +406,47 @@ export class ProjectsService {
         throw new Error('Project not found or access denied')
       }
 
-      const { count, error } = await supabase
-        .from('secrets')
-        .select('*', { count: 'exact', head: true })
-        .eq('project_id', id)
+      // Get counts for all item types in parallel
+      const [secretsResult, apiKeysResult, envVarsResult] = await Promise.all([
+        supabase
+          .from('secrets')
+          .select('*', { count: 'exact', head: true })
+          .eq('project_id', id),
+        supabase
+          .from('api_keys')
+          .select('*', { count: 'exact', head: true })
+          .eq('project_id', id),
+        supabase
+          .from('environment_variables')
+          .select('*', { count: 'exact', head: true })
+          .eq('project_id', id)
+      ])
 
-      if (error) {
-        console.error('Error getting project stats:', error)
-        throw new Error(`Failed to get project stats: ${error.message}`)
+      if (secretsResult.error) {
+        console.error('Error getting secrets count:', secretsResult.error)
+        throw new Error(`Failed to get secrets count: ${secretsResult.error.message}`)
       }
 
+      if (apiKeysResult.error) {
+        console.error('Error getting API keys count:', apiKeysResult.error)
+        throw new Error(`Failed to get API keys count: ${apiKeysResult.error.message}`)
+      }
+
+      if (envVarsResult.error) {
+        console.error('Error getting environment variables count:', envVarsResult.error)
+        throw new Error(`Failed to get environment variables count: ${envVarsResult.error.message}`)
+      }
+
+      const secretCount = secretsResult.count || 0
+      const apiKeyCount = apiKeysResult.count || 0
+      const environmentVariableCount = envVarsResult.count || 0
+      const totalItems = secretCount + apiKeyCount + environmentVariableCount
+
       return {
-        secretCount: count || 0
+        secretCount,
+        apiKeyCount,
+        environmentVariableCount,
+        totalItems
       }
     } catch (error) {
       console.error('Get project stats error:', error)
