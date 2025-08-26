@@ -1,21 +1,23 @@
-import React, { useEffect, useState, useCallback, useRef } from 'react'
-import { Link } from 'react-router-dom'
 import {
-  KeyIcon,
-  ShieldCheckIcon,
-  RectangleStackIcon,
+  ClockIcon,
   CogIcon,
-  PlusIcon,
   EyeIcon,
-  ClockIcon
+  KeyIcon,
+  PlusIcon,
+  RectangleStackIcon,
+  ShieldCheckIcon
 } from '@heroicons/react/24/outline'
-import { RefreshCw, AlertCircle } from 'lucide-react'
-import { useAuthStore } from '../store/authStore'
-import { useAppStore } from '../store/appStore'
-import { dashboardEvents } from '../store/appStore'
-import { DashboardService } from '../services/dashboard'
-import { queryCache } from '../lib/cache'
+import { AlertCircle, RefreshCw } from 'lucide-react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
+import { AddApiKeyForm } from '../components/AddApiKeyForm'
+import { AddEnvironmentVariableForm } from '../components/AddEnvironmentVariableForm'
+import { AddSecretForm } from '../components/AddSecretForm'
+import { CreateProjectForm } from '../components/CreateProjectForm'
+import { DashboardService } from '../services/dashboard'
+import { dashboardEvents, useAppStore } from '../store/appStore'
+import { useAuthStore } from '../store/authStore'
 import type { DashboardStats } from '../types'
 
 const Dashboard: React.FC = () => {
@@ -36,6 +38,16 @@ const Dashboard: React.FC = () => {
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [lastRefresh, setLastRefresh] = useState<Date>(new Date())
   const [error, setError] = useState<string | null>(null)
+  
+  // Quick action states
+  const [quickActionLoading, setQuickActionLoading] = useState<Record<string, boolean>>({})
+  const [quickActionSuccess, setQuickActionSuccess] = useState<Record<string, boolean>>({})
+  
+  // Modal states
+  const [showAddSecretModal, setShowAddSecretModal] = useState(false)
+  const [showAddApiKeyModal, setShowAddApiKeyModal] = useState(false)
+  const [showAddEnvVarModal, setShowAddEnvVarModal] = useState(false)
+  const [showCreateProjectModal, setShowCreateProjectModal] = useState(false)
   
   // Performance optimization: debouncing and caching
   const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null)
@@ -159,6 +171,50 @@ const Dashboard: React.FC = () => {
        setIsRefreshing(false)
      }
    }, [setSecrets, setApiKeys, setEnvVars, setDashboardStats])
+
+  // Quick action handlers
+  const handleQuickAction = useCallback(async (actionId: string, actionFn: () => Promise<void>) => {
+    setQuickActionLoading(prev => ({ ...prev, [actionId]: true }))
+    setQuickActionSuccess(prev => ({ ...prev, [actionId]: false }))
+    
+    try {
+      await actionFn()
+      setQuickActionSuccess(prev => ({ ...prev, [actionId]: true }))
+      
+      // Clear success state after 2 seconds
+      setTimeout(() => {
+        setQuickActionSuccess(prev => ({ ...prev, [actionId]: false }))
+      }, 2000)
+      
+      // Refresh dashboard stats
+      fetchDashboardData()
+    } catch (err) {
+      console.error(`Quick action ${actionId} failed:`, err)
+      toast.error(`Failed to ${actionId.replace('-', ' ')}`)
+    } finally {
+      setQuickActionLoading(prev => ({ ...prev, [actionId]: false }))
+    }
+  }, [fetchDashboardData])
+
+  const openAddSecretModal = useCallback(() => {
+    setShowAddSecretModal(true)
+  }, [])
+
+  const openAddApiKeyModal = useCallback(() => {
+    setShowAddApiKeyModal(true)
+  }, [])
+
+  const openAddEnvVarModal = useCallback(() => {
+    setShowAddEnvVarModal(true)
+  }, [])
+
+  const openCreateProjectModal = useCallback(() => {
+    setShowCreateProjectModal(true)
+  }, [])
+
+  const handleModalSuccess = useCallback(() => {
+    fetchDashboardData()
+  }, [fetchDashboardData])
   
   // Cleanup debounce timeout on unmount
   useEffect(() => {
@@ -171,32 +227,36 @@ const Dashboard: React.FC = () => {
 
   const quickActions = [
     {
+      id: 'add-secret',
       name: 'Add Secret',
       description: 'Store a new secret securely',
-      href: '/secrets/new',
       icon: ShieldCheckIcon,
-      color: 'bg-blue-500 hover:bg-blue-600'
+      color: 'bg-blue-500 hover:bg-blue-600',
+      action: openAddSecretModal
     },
     {
+      id: 'add-api-key',
       name: 'Add API Key',
       description: 'Save a new API key',
-      href: '/credentials/api-keys/new',
       icon: KeyIcon,
-      color: 'bg-green-500 hover:bg-green-600'
+      color: 'bg-green-500 hover:bg-green-600',
+      action: openAddApiKeyModal
     },
     {
+      id: 'add-env-var',
       name: 'Add Environment Variable',
       description: 'Store environment configuration',
-      href: '/credentials/env-vars/new',
       icon: CogIcon,
-      color: 'bg-purple-500 hover:bg-purple-600'
+      color: 'bg-purple-500 hover:bg-purple-600',
+      action: openAddEnvVarModal
     },
     {
+      id: 'create-project',
       name: 'Create Project',
       description: 'Organize your credentials',
-      href: '/projects/new',
       icon: RectangleStackIcon,
-      color: 'bg-orange-500 hover:bg-orange-600'
+      color: 'bg-orange-500 hover:bg-orange-600',
+      action: openCreateProjectModal
     }
   ]
 
@@ -336,28 +396,26 @@ const Dashboard: React.FC = () => {
               <div className="p-6">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   {quickActions.map((action) => {
-                    const Icon = action.icon
-                    return (
-                      <Link
-                        key={action.name}
-                        to={action.href}
-                        className="group relative bg-gray-50 p-6 rounded-lg hover:bg-gray-100 transition-colors duration-200"
-                      >
-                        <div className="flex items-center space-x-4">
-                          <div className={`w-12 h-12 rounded-lg flex items-center justify-center text-white ${action.color} transition-colors duration-200`}>
-                            <Icon className="w-6 h-6" />
-                          </div>
-                          <div className="flex-1">
-                            <h3 className="text-sm font-semibold text-gray-900 group-hover:text-gray-700">
-                              {action.name}
-                            </h3>
-                            <p className="text-xs text-gray-600">{action.description}</p>
-                          </div>
-                          <PlusIcon className="w-5 h-5 text-gray-400 group-hover:text-gray-600" />
-                        </div>
-                      </Link>
-                    )
-                  })}
+                     const Icon = action.icon
+                     return (
+                       <button
+                         key={action.name}
+                         onClick={action.action}
+                         className="group relative bg-gray-50 p-6 rounded-lg hover:bg-gray-100 transition-colors duration-200 text-left w-full"
+                       >
+                         <div className="flex items-center space-x-4">
+                           <div className={`w-12 h-12 rounded-lg flex items-center justify-center text-white ${action.color} transition-colors duration-200`}>
+                             <Icon className="w-6 h-6" />
+                           </div>
+                           <div className="flex-1">
+                             <h3 className="text-lg font-semibold text-gray-900">{action.name}</h3>
+                             <p className="text-sm text-gray-600">{action.description}</p>
+                           </div>
+                           <PlusIcon className="w-5 h-5 text-gray-400 group-hover:text-gray-600" />
+                         </div>
+                       </button>
+                     )
+                   })}
                 </div>
               </div>
             </div>
@@ -418,6 +476,31 @@ const Dashboard: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Quick Action Modals */}
+      <AddSecretForm
+        isOpen={showAddSecretModal}
+        onClose={() => setShowAddSecretModal(false)}
+        onSuccess={handleModalSuccess}
+      />
+      
+      <AddApiKeyForm
+        isOpen={showAddApiKeyModal}
+        onClose={() => setShowAddApiKeyModal(false)}
+        onSuccess={handleModalSuccess}
+      />
+      
+      <AddEnvironmentVariableForm
+        isOpen={showAddEnvVarModal}
+        onClose={() => setShowAddEnvVarModal(false)}
+        onSuccess={handleModalSuccess}
+      />
+      
+      <CreateProjectForm
+        isOpen={showCreateProjectModal}
+        onClose={() => setShowCreateProjectModal(false)}
+        onSuccess={handleModalSuccess}
+      />
     </div>
   )
 }
