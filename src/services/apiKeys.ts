@@ -305,7 +305,7 @@ export class ApiKeysService {
     }
 
     if (data.description !== undefined) {
-      updateData.description = data.description?.trim() || null;
+      updateData.description = data.description?.trim() ?? null;
     }
 
     if (data.url !== undefined) {

@@ -177,7 +177,7 @@ export const EditApiKeyForm: React.FC<EditApiKeyFormProps> = ({
 
       const updateData: UpdateApiKeyData = {
         name: formData.name.trim(),
-        description: formData.description.trim() || undefined,
+        description: formData.description.trim(),
         key: formData.key.trim(),
         url: formData.url.trim() || undefined,
         tags: formData.tags.length > 0 ? formData.tags : undefined,
