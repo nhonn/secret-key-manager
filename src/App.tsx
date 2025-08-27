@@ -22,7 +22,6 @@ const EnvironmentVariables = lazy(() => import('./pages/EnvironmentVariables'))
 const Projects = lazy(() => import('./pages/Projects'))
 const ProjectDetails = lazy(() => import('./pages/ProjectDetails'))
 const Settings = lazy(() => import('./pages/Settings'))
-const TestApiKeys = lazy(() => import('./pages/TestApiKeys'))
 const AuditLogs = lazy(() => import('./pages/AuditLogs'))
 
 function App() {
@@ -160,14 +159,6 @@ function App() {
                   <Settings />
                 </LazyWrapper>
               </Layout>
-            </ProtectedRoute>
-          } />
-          
-          <Route path="/test/api-keys" element={
-            <ProtectedRoute>
-              <LazyWrapper loadingMessage="Loading API key tester..." chunkName="TestApiKeys">
-                <TestApiKeys />
-              </LazyWrapper>
             </ProtectedRoute>
           } />
           

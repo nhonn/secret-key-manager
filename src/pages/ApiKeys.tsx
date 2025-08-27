@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { Plus, Search, Eye, EyeOff, Copy, Edit, Trash2, Key, ExternalLink, Calendar } from 'lucide-react'
+import SensitiveDataDisplay, { SecurityLevel, DataType } from '../components/ui/SensitiveDataDisplay'
 import { toast } from 'sonner'
 import { ApiKeysService, DecryptedApiKey } from '../services/apiKeys'
 import { AddApiKeyForm } from '../components/AddApiKeyForm'
@@ -79,6 +80,28 @@ export default function ApiKeys({}: ApiKeysPageProps) {
         toast.error('Failed to decrypt API key. Please ensure you are authenticated.')
       }
     }
+  }
+
+  // Map security levels from string to SecurityLevel type
+  const mapSecurityLevel = (level: string): SecurityLevel => {
+    switch (level?.toLowerCase()) {
+      case 'critical': return 'critical'
+      case 'high': return 'high'
+      case 'medium': return 'medium'
+      case 'low': return 'low'
+      default: return 'high' // API keys default to high security
+    }
+  }
+
+  // Audit logging for sensitive data reveals
+  const logSensitiveDataReveal = (keyId: string, keyName: string) => {
+    console.log(`[AUDIT] API Key revealed: ${keyName} (ID: ${keyId}) at ${new Date().toISOString()}`)
+    // In production, this should send to a secure audit logging service
+  }
+
+  const logSensitiveDataCopy = (keyId: string, keyName: string) => {
+    console.log(`[AUDIT] API Key copied: ${keyName} (ID: ${keyId}) at ${new Date().toISOString()}`)
+    // In production, this should send to a secure audit logging service
   }
 
 
@@ -233,33 +256,29 @@ export default function ApiKeys({}: ApiKeysPageProps) {
                       )}
 
                       <div className="space-y-2">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium text-gray-500 w-16">API Key:</span>
-                          <span className="text-sm text-gray-900 font-mono">
-                            {visibleKeys.has(apiKey.id) && apiKey.decrypted_key
-                              ? apiKey.decrypted_key
-                              : '••••••••••••••••••••••••••••••••••••••••'
+                        <SensitiveDataDisplay
+                          value={apiKey.decrypted_key || ''}
+                          label="API Key"
+                          dataType="apiKey"
+                          securityLevel={mapSecurityLevel('high')}
+                          isVisible={visibleKeys.has(apiKey.id)}
+                          onVisibilityChange={(visible) => {
+                            if (visible) {
+                              toggleKeyVisibility(apiKey.id)
+                            } else {
+                              setVisibleKeys(prev => {
+                                const newSet = new Set(prev)
+                                newSet.delete(apiKey.id)
+                                return newSet
+                              })
+                              setApiKeys(prev => prev.map(key => 
+                                key.id === apiKey.id ? { ...key, decrypted_key: undefined } : key
+                              ))
                             }
-                          </span>
-                          <button
-                            onClick={() => toggleKeyVisibility(apiKey.id)}
-                            className="p-1 text-gray-400 hover:text-gray-600 transition-colors"
-                          >
-                            {visibleKeys.has(apiKey.id) ? (
-                              <EyeOff className="w-3 h-3" />
-                            ) : (
-                              <Eye className="w-3 h-3" />
-                            )}
-                          </button>
-                          {visibleKeys.has(apiKey.id) && apiKey.decrypted_key && (
-                            <button
-                              onClick={() => copyToClipboard(apiKey.decrypted_key!, 'API key')}
-                              className="p-1 text-gray-400 hover:text-gray-600 transition-colors"
-                            >
-                              <Copy className="w-3 h-3" />
-                            </button>
-                          )}
-                        </div>
+                          }}
+                          onReveal={() => logSensitiveDataReveal(apiKey.id, apiKey.name)}
+                          onCopy={() => logSensitiveDataCopy(apiKey.id, apiKey.name)}
+                        />
 
 
 

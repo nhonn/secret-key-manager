@@ -18,6 +18,7 @@ import {
   FunnelIcon
 } from '@heroicons/react/24/outline'
 import { AlertCircle, Copy, Search, Shield, Clock, User, Filter } from 'lucide-react'
+import SensitiveDataDisplay, { SecurityLevel as SecLevel, DataType } from '../components/ui/SensitiveDataDisplay'
 import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -323,6 +324,38 @@ const ProjectDetails: React.FC<ProjectDetailsProps> = ({ projectId: propProjectI
       return newSet
     })
   }, [user])
+
+  // Map security levels from string to SecurityLevel type
+  const mapSecurityLevel = (level: string): SecLevel => {
+    switch (level?.toLowerCase()) {
+      case 'critical': return 'critical'
+      case 'high': return 'high'
+      case 'medium': return 'medium'
+      case 'low': return 'low'
+      default: return 'medium'
+    }
+  }
+
+  // Map item type to DataType
+  const mapDataType = (type: ItemType): DataType => {
+    switch (type) {
+      case 'secret': return 'secret'
+      case 'apiKey': return 'apiKey'
+      case 'envVar': return 'envVar'
+      default: return 'secret'
+    }
+  }
+
+  // Audit logging for sensitive data reveals
+  const logSensitiveDataReveal = (type: DataType, itemId: string, itemName: string) => {
+    console.log(`[AUDIT] Sensitive data revealed: ${type} - ${itemName} (ID: ${itemId}) at ${new Date().toISOString()}`)
+    // In production, this should send to a secure audit logging service
+  }
+
+  const logSensitiveDataCopy = (type: DataType, itemId: string, itemName: string) => {
+    console.log(`[AUDIT] Sensitive data copied: ${type} - ${itemName} (ID: ${itemId}) at ${new Date().toISOString()}`)
+    // In production, this should send to a secure audit logging service
+  }
 
   // Copy value to clipboard
   const copyToClipboard = useCallback(async (item: SecurityItem) => {
@@ -760,45 +793,15 @@ const ProjectDetails: React.FC<ProjectDetailsProps> = ({ projectId: propProjectI
                                 )}
                                 
                                 {/* Value Display */}
-                                <div className="bg-gray-50 rounded-md p-3 mb-3">
-                                  <div className="flex items-center justify-between mb-2">
-                                    <span className="text-xs font-medium text-gray-500 uppercase tracking-wide">
-                                      Value
-                                    </span>
-                                    <div className="flex items-center space-x-2">
-                                      <button
-                                        onClick={() => toggleValueVisibility(item.id)}
-                                        className="inline-flex items-center text-xs text-gray-500 hover:text-gray-700"
-                                      >
-                                        {isVisible ? (
-                                          <>
-                                            <EyeSlashIcon className="h-4 w-4 mr-1" />
-                                            Hide
-                                          </>
-                                        ) : (
-                                          <>
-                                            <EyeIcon className="h-4 w-4 mr-1" />
-                                            Show
-                                          </>
-                                        )}
-                                      </button>
-                                      <button
-                                        onClick={() => copyToClipboard(item)}
-                                        className="inline-flex items-center text-xs text-gray-500 hover:text-gray-700"
-                                      >
-                                        <ClipboardDocumentIcon className="h-4 w-4 mr-1" />
-                                        Copy
-                                      </button>
-                                    </div>
-                                  </div>
-                                  <div className="font-mono text-sm">
-                                    {isVisible ? (
-                                      <span className="text-gray-900 break-all">{item.value}</span>
-                                    ) : (
-                                      <span className="text-gray-400">{'•'.repeat(Math.min(item.value.length, 20))}</span>
-                                    )}
-                                  </div>
-                                </div>
+                                <SensitiveDataDisplay
+                                   value={item.value}
+                                   label={item.name}
+                                   dataType={mapDataType(item.type)}
+                                   securityLevel={mapSecurityLevel(item.securityLevel)}
+                                   onReveal={() => logSensitiveDataReveal(mapDataType(item.type), item.id, item.name)}
+                                   onCopy={() => logSensitiveDataCopy(mapDataType(item.type), item.id, item.name)}
+                                   className="mb-3"
+                                 />
                                 
                                 {/* Additional Info */}
                                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs text-gray-500">

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { Search, Plus, Eye, EyeOff, Copy, Edit, Trash2, Filter, Package, Tag } from 'lucide-react'
+import SensitiveDataDisplay, { SecurityLevel, DataType } from '../components/ui/SensitiveDataDisplay'
 import { toast } from 'sonner'
 import { SecretsService } from '../services/secrets'
 import { ProjectsService } from '../services/projects'
@@ -96,6 +97,28 @@ export default function Secrets({}: SecretsPageProps) {
         toast.error('Failed to decrypt secret')
       }
     }
+  }
+
+  // Map security levels from string to SecurityLevel type
+  const mapSecurityLevel = (level: string): SecurityLevel => {
+    switch (level?.toLowerCase()) {
+      case 'critical': return 'critical'
+      case 'high': return 'high'
+      case 'medium': return 'medium'
+      case 'low': return 'low'
+      default: return 'medium'
+    }
+  }
+
+  // Audit logging for sensitive data reveals
+  const logSensitiveDataReveal = (secretId: string, secretName: string) => {
+    console.log(`[AUDIT] Secret revealed: ${secretName} (ID: ${secretId}) at ${new Date().toISOString()}`)
+    // In production, this should send to a secure audit logging service
+  }
+
+  const logSensitiveDataCopy = (secretId: string, secretName: string) => {
+    console.log(`[AUDIT] Secret copied: ${secretName} (ID: ${secretId}) at ${new Date().toISOString()}`)
+    // In production, this should send to a secure audit logging service
   }
 
   const copyToClipboard = async (text: string, label: string) => {
@@ -346,30 +369,37 @@ export default function Secrets({}: SecretsPageProps) {
                         </div>
                       )}
                       
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium text-gray-500 w-20">Password:</span>
-                        <span className="text-sm text-gray-900 font-mono">
-                          {visibleSecrets.has(secret.id) && decryptedSecrets.has(secret.id) 
-                            ? decryptedSecrets.get(secret.id) 
-                            : '••••••••••••'}
-                        </span>
-                        <button
-                          onClick={() => toggleSecretVisibility(secret.id)}
-                          className="p-1 text-gray-400 hover:text-gray-600 transition-colors"
-                        >
-                          {visibleSecrets.has(secret.id) ? (
-                            <EyeOff className="w-3 h-3" />
-                          ) : (
-                            <Eye className="w-3 h-3" />
-                          )}
-                        </button>
-                        <button
-                          onClick={() => copySecretPassword(secret.id)}
-                          className="p-1 text-gray-400 hover:text-gray-600 transition-colors"
-                        >
-                          <Copy className="w-3 h-3" />
-                        </button>
-                      </div>
+                      <SensitiveDataDisplay
+                        value={decryptedSecrets.get(secret.id) || ''}
+                        label="Password"
+                        dataType="password"
+                        securityLevel={mapSecurityLevel('medium')}
+                        isVisible={visibleSecrets.has(secret.id)}
+                        onVisibilityChange={async (visible) => {
+                          if (visible && !decryptedSecrets.has(secret.id)) {
+                            try {
+                              const decryptedSecret = await SecretsService.getSecret(secret.id)
+                              setDecryptedSecrets(prev => new Map(prev).set(secret.id, decryptedSecret.password))
+                              setVisibleSecrets(prev => new Set(prev).add(secret.id))
+                            } catch (error) {
+                              console.error('Error decrypting secret:', error)
+                              toast.error('Failed to decrypt secret')
+                              return
+                            }
+                          } else if (!visible) {
+                            setVisibleSecrets(prev => {
+                              const newSet = new Set(prev)
+                              newSet.delete(secret.id)
+                              return newSet
+                            })
+                          }
+                        }}
+                        onReveal={() => logSensitiveDataReveal(secret.id, secret.name)}
+                        onCopy={async () => {
+                          logSensitiveDataCopy(secret.id, secret.name)
+                          await copySecretPassword(secret.id)
+                        }}
+                      />
 
                       {secret.url && (
                         <div className="flex items-center gap-2">

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { Plus, Search, Eye, EyeOff, Copy, Edit, Trash2, Settings, Download, Upload, Filter } from 'lucide-react'
+import SensitiveDataDisplay, { SecurityLevel, DataType } from '../components/ui/SensitiveDataDisplay'
 import { toast } from 'sonner'
 import { EnvironmentVariablesService, DecryptedEnvironmentVariable } from '../services/environmentVariables'
 import { AddEnvironmentVariableForm } from '../components/AddEnvironmentVariableForm'
@@ -88,6 +89,28 @@ export default function EnvironmentVariables({}: EnvironmentVariablesPageProps) 
         toast.error('Failed to decrypt environment variable')
       }
     }
+  }
+
+  // Map security levels from string to SecurityLevel type
+  const mapSecurityLevel = (level: string): SecurityLevel => {
+    switch (level?.toLowerCase()) {
+      case 'critical': return 'critical'
+      case 'high': return 'high'
+      case 'medium': return 'medium'
+      case 'low': return 'low'
+      default: return 'medium' // Environment variables default to medium security
+    }
+  }
+
+  // Audit logging for sensitive data reveals
+  const logSensitiveDataReveal = (varId: string, varName: string) => {
+    console.log(`[AUDIT] Environment Variable revealed: ${varName} (ID: ${varId}) at ${new Date().toISOString()}`)
+    // In production, this should send to a secure audit logging service
+  }
+
+  const logSensitiveDataCopy = (varId: string, varName: string) => {
+    console.log(`[AUDIT] Environment Variable copied: ${varName} (ID: ${varId}) at ${new Date().toISOString()}`)
+    // In production, this should send to a secure audit logging service
   }
 
 
@@ -329,33 +352,29 @@ export default function EnvironmentVariables({}: EnvironmentVariablesPageProps) 
                     )}
 
                     <div className="space-y-2">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium text-gray-500 w-16">Value:</span>
-                        <span className="text-sm text-gray-900 font-mono">
-                          {visibleVars.has(envVar.id) && envVar.decrypted_value
-                            ? envVar.decrypted_value
-                            : '••••••••••••••••••••••••••••••••••••••••'
+                      <SensitiveDataDisplay
+                        value={envVar.decrypted_value || ''}
+                        label="Value"
+                        dataType="envVar"
+                        securityLevel={mapSecurityLevel('medium')}
+                        isVisible={visibleVars.has(envVar.id)}
+                        onVisibilityChange={(visible) => {
+                          if (visible) {
+                            toggleVarVisibility(envVar.id)
+                          } else {
+                            setVisibleVars(prev => {
+                              const newSet = new Set(prev)
+                              newSet.delete(envVar.id)
+                              return newSet
+                            })
+                            setEnvVars(prev => prev.map(v => 
+                              v.id === envVar.id ? { ...v, decrypted_value: undefined } : v
+                            ))
                           }
-                        </span>
-                        <button
-                          onClick={() => toggleVarVisibility(envVar.id)}
-                          className="p-1 text-gray-400 hover:text-gray-600 transition-colors"
-                        >
-                          {visibleVars.has(envVar.id) ? (
-                            <EyeOff className="w-3 h-3" />
-                          ) : (
-                            <Eye className="w-3 h-3" />
-                          )}
-                        </button>
-                        {visibleVars.has(envVar.id) && envVar.decrypted_value && (
-                          <button
-                            onClick={() => copyToClipboard(envVar.decrypted_value!, 'Environment variable')}
-                            className="p-1 text-gray-400 hover:text-gray-600 transition-colors"
-                          >
-                            <Copy className="w-3 h-3" />
-                          </button>
-                        )}
-                      </div>
+                        }}
+                        onReveal={() => logSensitiveDataReveal(envVar.id, envVar.name)}
+                        onCopy={() => logSensitiveDataCopy(envVar.id, envVar.name)}
+                      />
                     </div>
 
                     <div className="mt-3 text-xs text-gray-500">
