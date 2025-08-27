@@ -480,7 +480,7 @@ export class ApiKeysService {
     try {
       const { data: apiKey, error } = await supabase
         .from('api_keys')
-        .select('encryption_iv, encryption_salt')
+        .select('encrypted_key, encryption_iv, encryption_salt')
         .eq('id', id)
         .eq('user_id', user.id)
         .single();
@@ -493,8 +493,12 @@ export class ApiKeysService {
         throw new Error('API key not found');
       }
 
+      if (!apiKey.encrypted_key || !apiKey.encryption_iv || !apiKey.encryption_salt) {
+        throw new Error('API key encryption data is missing');
+      }
+
       const encryptedData: EncryptedData = {
-        data: '',
+        data: apiKey.encrypted_key,
         iv: apiKey.encryption_iv,
         salt: apiKey.encryption_salt
       };
@@ -502,7 +506,7 @@ export class ApiKeysService {
       return await EncryptionService.decrypt(encryptedData);
     } catch (error) {
       console.error('Error decrypting API key:', error);
-      throw new Error('Failed to decrypt API key');
+      throw new Error('Failed to decrypt API key - authentication required');
     }
   }
 
