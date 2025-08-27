@@ -23,7 +23,7 @@ import { useParams, Link } from 'react-router-dom'
 import { toast } from 'sonner'
 import { useAppStore } from '../store/appStore'
 import { useAuthStore } from '../store/authStore'
-import { DashboardService } from '../services/dashboard'
+import { useEnsureDataLoaded } from '../hooks/useDataLoader'
 import { EncryptionService } from '../services/encryption'
 import type { DecryptedSecret, DecryptedApiKey, DecryptedEnvironmentVariable, Project, AccessLog } from '../types'
 
@@ -67,7 +67,15 @@ const ProjectDetails: React.FC<ProjectDetailsProps> = ({ projectId: propProjectI
   const { user } = useAuthStore()
   const { projects, secrets, apiKeys, envVars } = useAppStore()
   
-  const [isLoading, setIsLoading] = useState(true)
+  // Use data loader to ensure store data is available
+  const { isLoading: dataLoading, error: dataError, isDataLoaded } = useEnsureDataLoaded({
+    onLoadError: (error) => {
+      console.error('Failed to load dashboard data:', error)
+      toast.error('Failed to load project data')
+    }
+  })
+  
+  const [isDecrypting, setIsDecrypting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [project, setProject] = useState<Project | null>(null)
   const [decryptedItems, setDecryptedItems] = useState<SecurityItem[]>([])
@@ -112,10 +120,10 @@ const ProjectDetails: React.FC<ProjectDetailsProps> = ({ projectId: propProjectI
   // Load project data
   useEffect(() => {
     const loadProjectData = async () => {
-      if (!projectId || !user) return
+      if (!projectId || !user || !isDataLoaded) return
       
       try {
-        setIsLoading(true)
+        setIsDecrypting(true)
         setError(null)
         
         // Find project
@@ -218,12 +226,12 @@ const ProjectDetails: React.FC<ProjectDetailsProps> = ({ projectId: propProjectI
         console.error('Error loading project data:', err)
         setError(err instanceof Error ? err.message : 'Failed to load project data')
       } finally {
-        setIsLoading(false)
+        setIsDecrypting(false)
       }
     }
     
     loadProjectData()
-  }, [projectId, user, projects, secrets, apiKeys, envVars, getSecurityLevel])
+  }, [projectId, user, projects, secrets, apiKeys, envVars, getSecurityLevel, isDataLoaded])
 
   // Filter and search items
   const filteredItems = useMemo(() => {
@@ -440,30 +448,44 @@ const ProjectDetails: React.FC<ProjectDetailsProps> = ({ projectId: propProjectI
     }
   }
 
+  // Show loading state while data is being loaded or decrypted
+  const isLoading = dataLoading || isDecrypting
+  const hasError = dataError || error
+  
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading project details...</p>
+          <p className="text-gray-600">
+            {dataLoading ? 'Loading project data...' : 'Decrypting project details...'}
+          </p>
         </div>
       </div>
     )
   }
 
-  if (error || !project) {
+  if (hasError || !project) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
           <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
           <h2 className="text-xl font-semibold text-gray-900 mb-2">Error Loading Project</h2>
-          <p className="text-gray-600 mb-4">{error || 'Project not found'}</p>
-          <Link
-            to="/dashboard"
-            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700"
-          >
-            Back to Dashboard
-          </Link>
+          <p className="text-gray-600 mb-4">{hasError || 'Project not found'}</p>
+          <div className="space-x-3">
+            <button
+              onClick={() => window.location.reload()}
+              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+            >
+              Try Again
+            </button>
+            <Link
+              to="/dashboard"
+              className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+            >
+              Back to Dashboard
+            </Link>
+          </div>
         </div>
       </div>
     )
